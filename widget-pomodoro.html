@@ -350,7 +350,21 @@
   /* ==========================================================================
      1. DEFAULTS, PALETTES & STATE
      ========================================================================== */
-  const DEF={theme:'dark',acc:'#ff5a1f',wbg:'#050505',glow:45,ring:'smooth',focus:25,shortBreak:5,longBreak:15,sess:4,auto:false,snd:true,vol:70,zoom:100};
+  const DEF={theme:'auto',acc:'#ff5a1f',wbg:'#050505',glow:45,ring:'smooth',focus:25,shortBreak:5,longBreak:15,sess:4,auto:false,snd:true,vol:70,zoom:100,_lastEffective:null};
+
+  /* Auto theme (S.theme): resolves 'auto' against the OS/browser colour-scheme
+     preference (Notion embeds can't read Notion's own theme directly). Not to
+     be confused with S.auto, the unrelated "auto-start next session" setting. */
+  const _mq=window.matchMedia('(prefers-color-scheme: dark)');
+  function effectiveTheme(){ return S.theme==='auto' ? (_mq.matches?'dark':'light') : S.theme; }
+  /* Snap the card's background colour to the new theme's palette if the
+     current one isn't valid there. Shared by explicit clicks and the system
+     colour-scheme change listener. */
+  function onEffectiveThemeChange(prev,next){
+    if(prev===next) return;
+    const valid=WC[next].map(x=>x.c);
+    if(!valid.includes(S.wbg)) S.wbg=WC[next][0].c;
+  }
 
   /* Curated per-theme background palettes — prevents contrast issues by design. */
   const WC={
@@ -408,7 +422,19 @@
   /* ==========================================================================
      3. PERSISTENCE
      ========================================================================== */
-  function load(){ try{ const d=localStorage.getItem('pomo-w1'); if(d) S={...DEF,...JSON.parse(d)}; }catch(e){} }
+  function load(){
+    try{
+      const d=localStorage.getItem('pomo-w1');
+      if(d){
+        const p=JSON.parse(d);
+        S={...DEF,...p};
+        // One-time migration: saves from before Auto existed didn't have this
+        // flag, so force Auto to be the real default even for a returning save.
+        if(!p._themeMig){ S.theme='auto'; S._lastEffective=null; }
+        S._themeMig=1;
+      }
+    }catch(e){}
+  }
   function save(){ try{ localStorage.setItem('pomo-w1',JSON.stringify(S)); }catch(e){} }
 
   function fmt(s){ return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`; }
@@ -419,10 +445,11 @@
      ========================================================================== */
   function applyAll(){
     const c=document.getElementById('card');
-    c.setAttribute('data-theme',S.theme);
+    const eff=effectiveTheme();
+    c.setAttribute('data-theme',eff);
     c.style.setProperty('--wbg',S.wbg);
     c.style.setProperty('--acc',S.acc);
-    document.documentElement.style.background=S.theme==='dark'?'#191919':'#ffffff';
+    document.documentElement.style.background=eff==='dark'?'#191919':'#ffffff';
     document.getElementById('swWrap').style.transform=`scale(${S.zoom/100})`;
   }
 
@@ -746,7 +773,7 @@
   function cuSwHtml(g,cur,presets){ const isCustom=!presets.some(x=>x.c===cur); return `<div class="sw sw-cu${isCustom?' on':''}" data-g="${g}"></div>`; }
   function syncCuSwatch(g){
     const cur=g==='wc'?S.wbg:S.acc;
-    const presets=g==='wc'?WC[S.theme]:AC;
+    const presets=g==='wc'?WC[effectiveTheme()]:AC;
     const isCustom=!presets.some(x=>x.c===cur);
     const sw=document.querySelector(`.sw-cu[data-g="${g}"]`); if(!sw) return;
     sw.classList.toggle('on',isCustom);
@@ -795,13 +822,14 @@
       <div>
         <div class="s-lbl">Theme</div>
         <div class="tg">
+          <button class="tg-b${S.theme==='auto'?' on':''}" data-tg="theme" data-v="auto">Auto</button>
           <button class="tg-b${S.theme==='dark'?' on':''}" data-tg="theme" data-v="dark">Dark</button>
           <button class="tg-b${S.theme==='light'?' on':''}" data-tg="theme" data-v="light">Light</button>
         </div>
       </div>
       <div>
         <div class="s-lbl">Widget Color</div>
-        <div class="sw-row">${swHtml(WC[S.theme],'wc',S.wbg)}${cuSwHtml('wc',S.wbg,WC[S.theme])}</div>
+        <div class="sw-row">${swHtml(WC[effectiveTheme()],'wc',S.wbg)}${cuSwHtml('wc',S.wbg,WC[effectiveTheme()])}</div>
         ${cpkHtml('cpk-wc')}
       </div>
       <div>
@@ -874,8 +902,10 @@
       const tg=b.dataset.tg, v=b.dataset.v;
       if(tg==='theme'){
         S.theme=v;
-        const valid=WC[v].map(x=>x.c);
-        if(!valid.includes(S.wbg)) S.wbg=WC[v][0].c;
+        const next=effectiveTheme();
+        const prev=S._lastEffective!==null?S._lastEffective:(next==='dark'?'light':'dark');
+        onEffectiveThemeChange(prev,next);
+        S._lastEffective=next;
         save(); applyAll(); buildPanel(); return;
       }
       if(tg==='ring'){
@@ -939,7 +969,11 @@
     // Reset to defaults.
     const dfBtn=document.getElementById('dfBtn');
     if(dfBtn) dfBtn.addEventListener('click',()=>{
-      S={...DEF}; save(); applyAll();
+      S={...DEF};
+      const eff=effectiveTheme();
+      if(eff!=='dark') onEffectiveThemeChange('dark',eff);
+      S._lastEffective=eff;
+      save(); applyAll();
       mode='focus'; timeLeft=S.focus*60; sessions=0;
       isRun=false; clearInterval(iv); iv=null;
       resetModeStates(); isOvertime=false; overtimeCount=0;
@@ -1035,7 +1069,28 @@
      15. BOOT
      ========================================================================== */
   load();
+  // Bootstrap Auto's derived colour: DEF's wbg assumes a dark baseline, so
+  // only snap if the resolved theme differs; explicit Light/Dark users never
+  // touch this branch, so their saved colour is never disturbed.
+  {
+    const eff=effectiveTheme();
+    if(S.theme==='auto'){
+      if(S._lastEffective===null){ if(eff!=='dark') onEffectiveThemeChange('dark',eff); }
+      else if(S._lastEffective!==eff){ onEffectiveThemeChange(S._lastEffective,eff); }
+    }
+    S._lastEffective=eff;
+  }
+  save();
   applyAll();
+  // Live-update while Auto is selected and the OS/browser colour scheme changes.
+  _mq.addEventListener('change',()=>{
+    if(S.theme!=='auto') return;
+    const next=effectiveTheme();
+    if(next===S._lastEffective) return;
+    onEffectiveThemeChange(S._lastEffective,next);
+    S._lastEffective=next;
+    save(); applyAll(); buildPanel();
+  });
   timeLeft=S[mode]*60;
   const _resume=restoreState();
   buildRing(); updateUI(); syncModes(); syncIcon();

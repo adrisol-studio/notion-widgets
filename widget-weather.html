@@ -312,7 +312,7 @@
     <div class="sep"></div>
 
     <div class="lbl">Theme</div>
-    <div class="tg" id="gTheme"><button class="tb on" data-v="light">Light</button><button class="tb" data-v="dark">Dark</button></div>
+    <div class="tg" id="gTheme"><button class="tb on" data-v="auto">Auto</button><button class="tb" data-v="light">Light</button><button class="tb" data-v="dark">Dark</button></div>
     <div class="sep"></div>
 
     <div class="lbl">Background Colour</div>
@@ -360,21 +360,46 @@
 
   const DEF={
     lat:51.5074, lon:-0.1278, place:'London', country:'United Kingdom',
-    unit:'c', days:5, layout:'full', dayfmt:'short', theme:'light',
+    unit:'c', days:5, layout:'full', dayfmt:'short', theme:'auto',
     bg:'#ffffff', text:'#37352f',
     ambient:false, hourly:true, aqi:true, feels:true, rain:true, fcPop:false,
     dates:false, cond:true, anim:true, mono:false, zoom:100,
     hourlyExpanded:false,
-    savedLocations:[], activeIdx:0
+    savedLocations:[], activeIdx:0, _lastEffective:null
   };
   let S={...DEF};
+
+  /* Auto theme: resolves 'auto' against the OS/browser colour-scheme
+     preference (Notion embeds can't read Notion's own theme directly).
+     Ambient mode (background follows weather condition) stays independent. */
+  const _mq=window.matchMedia('(prefers-color-scheme: dark)');
+  function effectiveTheme(){ return S.theme==='auto' ? (_mq.matches?'dark':'light') : S.theme; }
+  /* Snap the page bg/text colours to the new theme's defaults. Shared by
+     explicit clicks and the system colour-scheme change listener. */
+  function onEffectiveThemeChange(prev,next){
+    if(prev===next) return;
+    if(next==='dark'){ S.bg='#191919'; S.text='#ffffff'; }
+    else { S.bg='#ffffff'; S.text='#37352f'; }
+  }
   let DATA=null, AQ=null, refreshTimer=null;
   let cache={};                         // per-city in-memory: "lat,lon" → {DATA, AQ, ts}
   const STALE_MS=10*60*1000;            // background-refresh a cached city only if older than this
 
   function cityKey(c){ return c.lat+','+c.lon; }
   function setLoading(on){ document.getElementById('wrapper').classList.toggle('loading',on); }
-  function load(){ try{ const d=localStorage.getItem('ww2'); if(d) S={...DEF,...JSON.parse(d)}; }catch(e){} }
+  function load(){
+    try{
+      const d=localStorage.getItem('ww2');
+      if(d){
+        const p=JSON.parse(d);
+        S={...DEF,...p};
+        // One-time migration: saves from before Auto existed didn't have this
+        // flag, so force Auto to be the real default even for a returning save.
+        if(!p._themeMig){ S.theme='auto'; S._lastEffective=null; }
+        S._themeMig=1;
+      }
+    }catch(e){}
+  }
   function save(){ try{ localStorage.setItem('ww2',JSON.stringify(S)); }catch(e){} }
 
   /* ==========================================================================
@@ -741,7 +766,7 @@
     b.classList.toggle('mono',S.mono);
     const p=document.getElementById('pop');
     p.classList.remove('pop-light','pop-dark');
-    p.classList.add(S.theme==='dark'?'pop-dark':'pop-light');
+    p.classList.add(effectiveTheme()==='dark'?'pop-dark':'pop-light');
     applyAmbient();
   }
 
@@ -897,7 +922,7 @@
       const container=document.querySelector(`.sr[data-group="${key}"]`); if(!container) return;
       container.querySelectorAll('.sw:not(.sw-cu)').forEach(s=>s.remove());
       const cuSw=container.querySelector('.sw-cu');
-      SWATCH_PALETTES[key][S.theme].forEach(c=>{
+      SWATCH_PALETTES[key][effectiveTheme()].forEach(c=>{
         const sw=document.createElement('div');
         if(c==='transparent'){ sw.className='sw sw-tp'; sw.title='Transparent'; }
         else{ const lt=isLightSwatch(c); sw.className='sw '+(lt?'lt':'dk')+(c.toLowerCase()==='#ffffff'?' sw-wh':''); sw.style.background=c; }
@@ -927,8 +952,19 @@
   setupTg('gLayout','layout',()=>{ applyAll(); render(); });
   setupTg('gDayfmt','dayfmt',render);
   setupTg('gTheme','theme',()=>{
-    if(S.theme==='dark'){ S.bg='#191919'; S.text='#ffffff'; }
-    else { S.bg='#ffffff'; S.text='#37352f'; }
+    const next=effectiveTheme();
+    const prev=S._lastEffective!==null?S._lastEffective:(next==='dark'?'light':'dark');
+    onEffectiveThemeChange(prev,next);
+    S._lastEffective=next;
+    save(); applyAll(); renderSwatches(); hlAll(); render();
+  });
+  // Live-update while Auto is selected and the OS/browser colour scheme changes.
+  _mq.addEventListener('change',()=>{
+    if(S.theme!=='auto') return;
+    const next=effectiveTheme();
+    if(next===S._lastEffective) return;
+    onEffectiveThemeChange(S._lastEffective,next);
+    S._lastEffective=next;
     save(); applyAll(); renderSwatches(); hlAll(); render();
   });
 
@@ -951,6 +987,9 @@
   document.getElementById('rstBtn').addEventListener('click',()=>{
     const {place,country,lat,lon,savedLocations,activeIdx}=S;
     S={...DEF,place,country,lat,lon,savedLocations,activeIdx};    // keep location; reset everything else
+    const eff=effectiveTheme();
+    if(eff!=='light') onEffectiveThemeChange('light',eff);
+    S._lastEffective=eff;
     cache={};
     save(); applyAll(); syncUI(); showMsg('<div class="spinner"></div>'); AQ=null; fetchWeather();
   });
@@ -968,6 +1007,18 @@
      15. INIT
      ========================================================================== */
   load();
+  // Bootstrap Auto's derived colours: DEF's bg/text assume a light baseline,
+  // so only snap if the resolved theme differs; explicit Light/Dark users
+  // never touch this branch, so their saved colours are never disturbed.
+  {
+    const eff=effectiveTheme();
+    if(S.theme==='auto'){
+      if(S._lastEffective===null){ if(eff!=='light') onEffectiveThemeChange('light',eff); }
+      else if(S._lastEffective!==eff){ onEffectiveThemeChange(S._lastEffective,eff); }
+    }
+    S._lastEffective=eff;
+  }
+  save();
   ensureCities();
   applyAll();
   syncUI();

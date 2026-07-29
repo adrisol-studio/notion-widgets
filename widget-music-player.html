@@ -225,7 +225,7 @@
     .tg { display: flex; border-radius: 8px; overflow: hidden; }
     .tb { flex: 1; padding: 10px 8px; font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600; text-align: center; border: none; cursor: pointer; transition: all .15s; white-space: nowrap; }
     .tb + .tb { border-left: 1px solid; }
-    #gTheme .tb { font-size: 10px; padding: 8px 3px; }    /* 4 theme buttons need to fit */
+    #gTheme .tb { font-size: 9px; padding: 8px 2px; }    /* 5 theme buttons need to fit */
     .pop-input { width: 100%; height: 34px; border: 1px solid; border-radius: 6px; padding: 0 10px; font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 500; outline: none; transition: border-color 0.2s; }
     .pop-input:focus { border-color: var(--svc-accent, #1DB954); }
     .pop-input-row { display: flex; gap: 6px; align-items: center; }
@@ -420,8 +420,9 @@
 
     <div class="lbl">Theme</div>
     <div class="tg" id="gTheme">
+      <button class="tb on" data-v="auto">Auto</button>
       <button class="tb" data-v="minimal">Minimal</button>
-      <button class="tb on" data-v="dark">Dark</button>
+      <button class="tb" data-v="dark">Dark</button>
       <button class="tb" data-v="oled">OLED</button>
       <button class="tb" data-v="mono">Mono</button>
     </div>
@@ -471,13 +472,32 @@
      The ?instance= query param namespaces storage so multiple copies of the
      widget on one Notion page keep independent links/settings.
      ========================================================================== */
-  const DEF={theme:'dark',zoom:100,glow:false,service:'',spotifyUrl:'',ytUrl:'',spotifyView:'full',recentLinks:[],customPresets:[],deletedPresets:[]};
+  const DEF={theme:'auto',zoom:100,glow:false,service:'',spotifyUrl:'',ytUrl:'',spotifyView:'full',recentLinks:[],customPresets:[],deletedPresets:[]};
   let S={...DEF};
+
+  /* Auto theme: resolves 'auto' against the OS/browser colour-scheme
+     preference (Notion embeds can't read Notion's own theme directly).
+     Maps to the closest of the 4 presets: Dark when the system prefers dark,
+     Minimal (the only light-coloured preset) when it prefers light. */
+  const _mq=window.matchMedia('(prefers-color-scheme: dark)');
+  function effectiveTheme(){ return S.theme==='auto' ? (_mq.matches?'dark':'minimal') : S.theme; }
 
   const INSTANCE_ID = new URLSearchParams(window.location.search).get('instance') || 'default';
   const STORAGE_KEY = `spw1_${INSTANCE_ID}`;
 
-  function load(){ try{ const d=localStorage.getItem(STORAGE_KEY); if(d) S={...DEF,...JSON.parse(d)}; }catch(e){} }
+  function load(){
+    try{
+      const d=localStorage.getItem(STORAGE_KEY);
+      if(d){
+        const p=JSON.parse(d);
+        S={...DEF,...p};
+        // One-time migration: saves from before Auto existed didn't have this
+        // flag, so force Auto to be the real default even for a returning save.
+        if(!p._themeMig) S.theme='auto';
+        S._themeMig=1;
+      }
+    }catch(e){}
+  }
   function save(){ try{ localStorage.setItem(STORAGE_KEY,JSON.stringify(S)); }catch(e){} }
 
   /* ==========================================================================
@@ -524,7 +544,7 @@
 
   function applyTheme(){
     const r=document.documentElement.style;
-    const t=THEMES[S.theme]||THEMES.dark;
+    const t=THEMES[effectiveTheme()]||THEMES.dark;
     r.setProperty('--card-bg',t.cb);
     r.setProperty('--text-color',t.tc);
     r.setProperty('--text-muted',t.tm);
@@ -750,6 +770,8 @@
   }
   function syncTg(id,val){ document.querySelectorAll(`#${id} .tb`).forEach(b=>b.classList.toggle('on',b.dataset.v===val)); }
   setupTg('gTheme','theme',applyTheme);
+  // Live-update while Auto is selected and the OS/browser colour scheme changes.
+  _mq.addEventListener('change',()=>{ if(S.theme==='auto') applyTheme(); });
   setupTg('gView','spotifyView',()=>{ applySpotifyView(); updateToggleIcon(); });
   setupTg('gGlow','glow',applyGlow);
   const zSlider=document.getElementById('zSlider'), zLabel=document.getElementById('zLabel');

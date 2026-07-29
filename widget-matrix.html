@@ -334,6 +334,7 @@
         <div class="blk">
           <div class="lb">Theme</div>
           <div class="tg" id="gTheme">
+            <button class="tb" data-v="auto">Auto</button>
             <button class="tb" data-v="dark">Dark</button>
             <button class="tb" data-v="light">Light</button>
           </div>
@@ -416,7 +417,7 @@
     return null;
   }
 
-  const DEF={theme:'dark',charset:'latin',color:'#ffffff',speed:2.5,size:14,trail:8,bold:true};
+  const DEF={theme:'auto',charset:'latin',color:'#ffffff',speed:2.5,size:14,trail:8,bold:true,_lastEffective:null};
   /* Per-theme preset swatches; switching theme migrates the colour by index. */
   const PRESETS={
     dark:['#00ff41','#ffffff','#00cfff','#ff3322','#cc44ff','#ffaa00'],
@@ -425,8 +426,33 @@
   const HGAP=6; // horizontal gap between columns (px)
   const VGAP=2; // vertical gap between rows (px)
 
+  /* Auto theme: resolves 'auto' against the OS/browser colour-scheme
+     preference (Notion embeds can't read Notion's own theme directly). The
+     ?theme= URL override and manual Light/Dark picks still work as before. */
+  const _mq=window.matchMedia('(prefers-color-scheme: dark)');
+  function effectiveTheme(){ return S.theme==='auto' ? (_mq.matches?'dark':'light') : S.theme; }
+  /* Migrate the swatch colour from one resolved theme to the other. Shared by
+     explicit clicks and the system colour-scheme change listener. */
+  function onEffectiveThemeChange(prev,next){
+    if(prev===next) return;
+    const idx=PRESETS[prev].findIndex(p=>p.toLowerCase()===S.color.toLowerCase());
+    if(idx>=0) S.color=PRESETS[next][idx];
+  }
+
   let S={...DEF};
-  function load(){ try{ const d=localStorage.getItem('wmx3'); if(d) S={...DEF,...JSON.parse(d)}; }catch(e){} }
+  function load(){
+    try{
+      const d=localStorage.getItem('wmx3');
+      if(d){
+        const p=JSON.parse(d);
+        S={...DEF,...p};
+        // One-time migration: saves from before Auto existed didn't have this
+        // flag, so force Auto to be the real default even for a returning save.
+        if(!p._themeMig){ S.theme='auto'; S._lastEffective=null; }
+        S._themeMig=1;
+      }
+    }catch(e){}
+  }
   function save(){ try{ localStorage.setItem('wmx3',JSON.stringify(S)); }catch(e){} }
 
   /* Optional URL overrides, e.g. ?theme=dark&charset=katakana&color=00ff41 */
@@ -577,7 +603,7 @@
   /* ==========================================================================
      5. DRAW LOOP
      ========================================================================== */
-  function applyTheme(){ document.body.style.background=S.theme==='light'?'#ffffff':'#191919'; }
+  function applyTheme(){ document.body.style.background=effectiveTheme()==='light'?'#ffffff':'#191919'; }
 
   function draw(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -630,15 +656,25 @@
     S.bold=b.dataset.v==='true'; save(); syncTg('gBold',String(S.bold)); restart();
   });
 
-  // Theme (Dark/Light): migrate the colour to the matching preset by index.
+  // Theme (Auto/Dark/Light): migrate the colour to the matching preset by index.
   document.getElementById('gTheme').addEventListener('click',e=>{
     const b=e.target.closest('[data-v]'); if(!b) return;
     if(S.theme===b.dataset.v) return;
-    const prev=S.theme;
     S.theme=b.dataset.v;
-    const idx=PRESETS[prev].findIndex(p=>p.toLowerCase()===S.color.toLowerCase());
-    if(idx>=0) S.color=PRESETS[S.theme][idx];
+    const next=effectiveTheme();
+    const prev=S._lastEffective!==null?S._lastEffective:(next==='dark'?'light':'dark');
+    onEffectiveThemeChange(prev,next);
+    S._lastEffective=next;
     save(); syncTg('gTheme',S.theme); applyTheme(); renderSwatches();
+  });
+  // Live-update while Auto is selected and the OS/browser colour scheme changes.
+  _mq.addEventListener('change',()=>{
+    if(S.theme!=='auto') return;
+    const next=effectiveTheme();
+    if(next===S._lastEffective) return;
+    onEffectiveThemeChange(S._lastEffective,next);
+    S._lastEffective=next;
+    save(); applyTheme(); renderSwatches();
   });
 
   // Character set: swap every glyph immediately.
@@ -661,7 +697,7 @@
     const sr=document.getElementById('gColor');
     const cuSw=document.getElementById('cuSw');
     sr.querySelectorAll('.sw:not(.sw-cu)').forEach(s=>s.remove());
-    PRESETS[S.theme].forEach(c=>{
+    PRESETS[effectiveTheme()].forEach(c=>{
       const sw=document.createElement('div');
       sw.className='sw';
       sw.dataset.c=c;
@@ -772,10 +808,29 @@
     });
   }
 
-  document.getElementById('rstBtn').addEventListener('click',()=>{ S={...DEF}; save(); syncAll(); applyTheme(); restart(); });
+  document.getElementById('rstBtn').addEventListener('click',()=>{
+    S={...DEF};
+    const eff=effectiveTheme();
+    if(eff!=='dark') onEffectiveThemeChange('dark',eff);
+    S._lastEffective=eff;
+    save(); syncAll(); applyTheme(); restart();
+  });
 
   // Boot: load settings, apply URL overrides, sync UI, then start animating.
-  load(); applyUrl(); syncAll(); applyTheme(); initColorPicker(); resize(); restart();
+  load(); applyUrl();
+  // Bootstrap Auto's derived colour: DEF's colour assumes a dark baseline, so
+  // only snap if the resolved theme differs; explicit Light/Dark (whether from
+  // the toggle or a ?theme= URL override) never touches this branch.
+  {
+    const eff=effectiveTheme();
+    if(S.theme==='auto'){
+      if(S._lastEffective===null){ if(eff!=='dark') onEffectiveThemeChange('dark',eff); }
+      else if(S._lastEffective!==eff){ onEffectiveThemeChange(S._lastEffective,eff); }
+    }
+    S._lastEffective=eff;
+  }
+  save();
+  syncAll(); applyTheme(); initColorPicker(); resize(); restart();
   </script>
 </body>
 </html>

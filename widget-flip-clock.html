@@ -121,11 +121,23 @@
     .clock.std .colon { margin: 0 -3px; }
     .clock.cmp .colon { padding: 0 3px; }
 
-    .tile { position: relative; height: 110px; box-shadow: var(--tile-shadow); }
+    /* will-change keeps every tile permanently on its own compositing layer.
+       Without it the tile is only promoted while a 3D-transformed flap exists,
+       and because the clock is flex-centred inside a scaled wrapper the tile
+       usually sits on a FRACTIONAL pixel position — promotion snaps that layer
+       to a whole pixel, so the tile visibly jumped sideways/up as a flip began
+       and snapped back when it ended. Promoting once, up front, removes the
+       promote/demote cycle entirely so nothing ever shifts. */
+    .tile { position: relative; height: 110px; box-shadow: var(--tile-shadow); will-change: transform; }
     .clock.std .tile { width: 60px; perspective: 350px; }
     .clock.cmp .tile { width: 100px; perspective: 420px; }
 
-    /* The two static halves that show the current digit. */
+    /* The two static halves that show the current digit.
+       translateZ(0) keeps them on their own compositing layer, matching the
+       3D-transformed flaps: without it the digit is rasterised with subpixel
+       antialiasing here but greyscale AA in the flap, so swapping one for the
+       other at the end of a flip made the glyph visibly shimmer. z=0 means no
+       visual offset even inside the tile's perspective. */
     .half {
       position: absolute;
       left: 0;
@@ -134,13 +146,20 @@
       overflow: hidden;
       background: var(--tile-bg, #2a2a2a);
       transition: background 0.3s;
+      transform: translateZ(0);
     }
+    /* The highlight and seam lines are drawn as INSET SHADOWS, not borders.
+       Borders sit inside the box (border-box) and shift the absolutely
+       positioned digit by their width — a flap whose borders didn't exactly
+       match its static half made the digit jump 1px as the flap appeared and
+       again as it was removed ("lifted up, then sat down"). Inset shadows are
+       paint-only, so flap and half keep identical geometry by construction. */
     .half.top {
       top: 0;
       border-radius: 10px 10px 0 0;
-      border-top: 1px solid var(--tile-highlight);
-      border-bottom: 1px solid var(--tile-seam);
-      box-shadow: var(--tile-inner-shadow);
+      box-shadow: inset 0 1px 0 var(--tile-highlight),
+                  inset 0 -1px 0 var(--tile-seam),
+                  var(--tile-inner-shadow);
     }
     .half.top::before { content: ''; position: absolute; inset: 0; background: var(--tile-gradient); pointer-events: none; border-radius: 10px 10px 0 0; }
     .half.bot { bottom: 0; border-radius: 0 0 10px 10px; filter: brightness(0.9); }
@@ -160,6 +179,12 @@
       letter-spacing: var(--digit-ls, 0.02em);
       font-family: var(--digit-font, 'Anton');
       text-shadow: 2px 4px 6px rgba(0,0,0,0.35);
+      /* Fixed-width digits: without this, glyphs of differing advance width
+         (e.g. 1 vs 8) are centred differently, so the digit appears to shift
+         sideways when a flap showing the old value is swapped for the half
+         showing the new one. */
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "tnum" 1;
     }
     .half .num { transition: color 0.3s; }
     .half.top .num { top: 0; }
@@ -168,45 +193,85 @@
     /* ===== The animated flip flaps (added/removed per flip in JS) ===== */
     .flap { position: absolute; left: 0; right: 0; height: 50%; overflow: hidden; z-index: 5; }
     .flap .num { z-index: 2; }
+    /* The flaps must be PIXEL-IDENTICAL to the static halves they cover and are
+       replaced by, or the swap at either end of the flip shows as a 1-frame
+       flicker. That means matching borders (border-box means a missing border
+       shifts the digit inside by 1px), the same inset shadow and gradient, and
+       NO drop shadow of their own — a flap's box-shadow would vanish abruptly
+       when the flap is removed. Depth during the flip comes from .botshade. */
     .flap-top {
       top: 0;
       background: var(--tile-bg, #2a2a2a);
       border-radius: 10px 10px 0 0;
-      border-bottom: 1px solid var(--tile-seam);
-      box-shadow: var(--flap-shadow-top);
+      /* Must match .half.top exactly — same inset shadows, no borders, and no
+         OUTSET shadow (an outset shadow would vanish abruptly on removal). */
+      box-shadow: inset 0 1px 0 var(--tile-highlight),
+                  inset 0 -1px 0 var(--tile-seam),
+                  var(--tile-inner-shadow);
       transform-origin: bottom center;
-      animation: fd var(--flip-top-dur) var(--flip-top-ease) forwards,
-                 ftsOut var(--flip-top-dur) var(--flip-top-ease) forwards;
+      will-change: transform;
+      animation: fd var(--flip-top-dur) var(--flip-top-ease) forwards;
     }
+    .flap-top::before { content: ''; position: absolute; inset: 0; background: var(--tile-gradient); pointer-events: none; border-radius: 10px 10px 0 0; }
     .flap-top .num { top: 0; }
-    .flap-top::before { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: linear-gradient(to top, rgba(0,0,0,var(--flap-gradient-strength,0.15)) 0%, transparent 60%); animation: fdg var(--flip-top-dur) var(--flip-top-ease) both; }
-    .flap-top::after  { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; animation: fds var(--flip-top-dur) var(--flip-top-ease) both; }
+    /* NOTE: the falling flap deliberately carries NO shading of its own. A card
+       swinging down toward the viewer doesn't darken — it casts a shadow onto
+       the half it is descending over. That cast shadow is .botshade below. */
+
+    /* Cast shadow laid over the STATIC bottom half while the top flap falls
+       across it. Darkest at the seam (where the falling flap is closest) and
+       softening downward. Added per-flip by flipTile() and sits above the
+       static halves but below the flaps, so the rising flap covers it. */
+    .botshade {
+      position: absolute; left: 0; right: 0; bottom: 0; height: 50%;
+      z-index: 1; pointer-events: none;
+      border-radius: 0 0 10px 10px;
+      /* Feathered tail: the shadow fades to nothing at its lower edge, so the
+         edge that sweeps down the tile reads as a soft penumbra, not a band. */
+      background: linear-gradient(to bottom,
+        rgba(0,0,0,var(--flap-shade-strong,0.9)) 0%,
+        rgba(0,0,0,var(--flap-shade-soft,0.5)) 62%,
+        rgba(0,0,0,0) 100%);
+      /* Grows downward from the seam: scaleY is animated 0 -> 1 so the shadow
+         creeps across the bottom half as the flap descends, instead of the
+         whole half darkening at once. */
+      transform-origin: top center;
+      transform: scaleY(0);
+      opacity: 0;
+      will-change: transform, opacity;
+      animation: fshCast var(--flip-top-dur) linear forwards;
+    }
     .flap-bot {
       bottom: 0;
       background: var(--tile-bg, #2a2a2a);
       filter: brightness(0.9);
       border-radius: 0 0 10px 10px;
-      box-shadow: var(--flap-shadow-bot);
       transform-origin: top center;
       transform: rotateX(90deg);
-      animation: fu var(--flip-bot-dur) var(--flip-bot-ease) var(--flip-bot-delay) forwards,
-                 fbsOut var(--flip-bot-dur) var(--flip-bot-ease) var(--flip-bot-delay) forwards;
+      will-change: transform;
+      animation: fu var(--flip-bot-dur) var(--flip-bot-ease) var(--flip-bot-delay) forwards;
     }
     .flap-bot .num { top: -55px; }
-    .flap-bot::before { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: linear-gradient(to bottom, rgba(0,0,0,var(--flap-gradient-strength,0.15)) 0%, transparent 60%); animation: fug var(--flip-bot-dur) var(--flip-bot-ease) var(--flip-bot-delay) both; }
-    .flap-bot::after  { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; animation: fus var(--flip-bot-dur) var(--flip-bot-ease) var(--flip-bot-delay) both; }
+    .flap-bot::after {
+      content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+      border-radius: 0 0 10px 10px;
+      background: linear-gradient(to bottom,
+        rgba(0,0,0,var(--flap-shade-strong,0.9)) 0%,
+        rgba(0,0,0,var(--flap-shade-soft,0.5)) 100%);
+      opacity: 0;
+      will-change: opacity;
+      animation: fshBot var(--flip-bot-dur) linear var(--flip-bot-delay) both;
+    }
 
-    /* Flip keyframes: fd = top flap falls, fu = bottom flap rises (with bounce);
-       fds/fus = moving shadow, fdg/fug = depth gradient, *Out = settle shadow.
-       Note: fu/fds/fus are also rebuilt in JS per motion style (see applyMotion). */
+    /* Flip keyframes: fd = top flap falls, fu = bottom flap rises (with bounce).
+       fd/fu are the rotation; the shading pair (fshCast/fshBot) is generated in
+       JS per motion style — see applyMotion(), which rebuilds ALL of them so
+       every preset stays internally consistent. The definitions here are only
+       first-paint fallbacks for the default "smooth" preset. */
     @keyframes fd  { 0% { transform: rotateX(0); }     100% { transform: rotateX(-90deg); } }
     @keyframes fu  { 0% { transform: rotateX(90deg); } 83%  { transform: rotateX(-3deg); } 100% { transform: rotateX(0); } }
-    @keyframes fds { 0% { background: rgba(0,0,0,0); } 55%  { background: rgba(0,0,0,0.05); } 90% { background: rgba(0,0,0,0.35); } 100% { background: rgba(0,0,0,0); } }
-    @keyframes fus { 0% { background: rgba(0,0,0,0.35); } 60% { background: rgba(0,0,0,0.12); } 85% { background: rgba(0,0,0,0); } 100% { background: rgba(0,0,0,0); } }
-    @keyframes fdg { 0% { opacity: 0; } 60% { opacity: 0.15; } 90% { opacity: 0.7; } 100% { opacity: 0; } }
-    @keyframes fug { 0% { opacity: 0; } 25% { opacity: 0.6; } 100% { opacity: 0; } }
-    @keyframes fbsOut { 0% { box-shadow: var(--flap-shadow-bot); } 100% { box-shadow: 0 -2px 4px rgba(0,0,0,0); } }
-    @keyframes ftsOut { 0% { box-shadow: var(--flap-shadow-top); } 100% { box-shadow: 0 2px 4px rgba(0,0,0,0); } }
+    @keyframes fshCast { 0% { transform: scaleY(0); opacity: 0.14; } 100% { transform: scaleY(1); opacity: 0.35; } }
+    @keyframes fshBot  { 0% { opacity: 0.35; } 100% { opacity: 0; } }
 
     .ampm {
       font-size: 18px;
@@ -317,6 +382,7 @@
     .tg { display: flex; border-radius: 8px; overflow: hidden; }
     .tb { flex: 1; padding: 9px 6px; font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600; text-align: center; border: none; cursor: pointer; transition: all .15s; white-space: nowrap; }
     .tb + .tb { border-left: 1px solid; }
+    #gTheme .tb { font-size: 10.5px; padding: 9px 4px; }   /* Auto/Light/Dark */
     .zr { display: flex; align-items: center; gap: 8px; }
     .zi { font-size: 16px; user-select: none; cursor: default; line-height: 1; }
     .zs { flex: 1; -webkit-appearance: none; appearance: none; height: 4px; border-radius: 4px; outline: none; }
@@ -371,7 +437,7 @@
 
     <div class="row2">
       <div><div class="lbl">Clock Style</div><div class="tg" id="gMode"><button class="tb on" data-v="standard">Standard</button><button class="tb" data-v="compact">Compact</button></div></div>
-      <div><div class="lbl">Theme</div><div class="tg" id="gTheme"><button class="tb on" data-v="light">Light</button><button class="tb" data-v="dark">Dark</button></div></div>
+      <div><div class="lbl">Theme</div><div class="tg" id="gTheme"><button class="tb on" data-v="auto">Auto</button><button class="tb" data-v="light">Light</button><button class="tb" data-v="dark">Dark</button></div></div>
     </div>
     <div class="sep"></div>
 
@@ -418,9 +484,15 @@
   const DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-  const DEF={mode:'standard',theme:'light',tile:'#2a2a2a',timeText:'#ffffff',dateText:'#111111',bg:'#ffffff',format:'24',display:'both',zoom:100,preset:null,font:'Anton',motion:'smooth'};
+  const DEF={mode:'standard',theme:'auto',tile:'#2a2a2a',timeText:'#ffffff',dateText:'#111111',bg:'#ffffff',format:'24',display:'both',zoom:100,preset:null,font:'Anton',motion:'smooth',_lastEffective:null};
   let S={...DEF};
   let currentBreak='large';                 // 'large' | 'medium' (narrow embeds)
+
+  /* Auto theme: resolves 'auto' against the OS/browser colour-scheme preference
+     (Notion embeds have no way to read Notion's own theme directly). Manual
+     Light/Dark picks still work exactly as before and are left untouched. */
+  const _mq=window.matchMedia('(prefers-color-scheme: dark)');
+  function effectiveTheme(){ return S.theme==='auto' ? (_mq.matches?'dark':'light') : S.theme; }
 
   const $cont=document.getElementById('cont');
   const $wrapper=document.getElementById('wrapper');
@@ -431,8 +503,13 @@
       if(d){
         const p=JSON.parse(d);
         S={...DEF,...p};
-        if(!p.bg) S.bg=S.theme==='dark'?'#191919':'#ffffff';   // back-fill bg for old saves
+        if(!p.bg) S.bg=effectiveTheme()==='dark'?'#191919':'#ffffff';   // back-fill bg for old saves
         if(S.font==='Orbitron') S.font='Anton';                // retired font → default
+        if(S.motion==='slow') S.motion='smooth';               // retired motion → default
+        // One-time migration: saves from before Auto existed didn't have this
+        // flag, so force Auto to be the real default even for a returning save.
+        if(!p._themeMig){ S.theme='auto'; S._lastEffective=null; }
+        S._themeMig=1;
       }
     }catch(e){}
   }
@@ -531,11 +608,89 @@
     minimal:    {topDur:0.15, topEase:'ease-in',                    botDur:0.15, botEase:'ease-out',                  botDelay:0.13, bounce:0,  bounceAt:0,  shadowMax:0},
     instant:    null
   };
-  /* Apply a motion style by setting the timing variables and rebuilding the
-     bounce/shadow keyframes (fu/fds/fus) into an injected <style>. */
+  /* ---- Easing maths -------------------------------------------------------
+     CSS applies a timing-function to EVERY keyframe segment, not once across
+     the whole animation. That is what used to break the shading: the rotation
+     had 2 stops (one smooth eased sweep) while the shadow had 4, so its curve
+     restarted at each stop and crammed the final alpha drop into a few ms —
+     read as an instant colour pop.
+
+     The fix: sample the rotation's easing curve here, convert each sample into
+     the flap's real angle, and emit the shading as many small LINEAR steps.
+     The shading is then a pure function of the visible angle and can never
+     drift from the motion, whatever easing or duration a preset uses. */
+  function bezierEase(x1,y1,x2,y2){
+    const cx=3*x1, bx=3*(x2-x1)-cx, ax=1-cx-bx;
+    const cy=3*y1, by=3*(y2-y1)-cy, ay=1-cy-by;
+    const sampX=s=>((ax*s+bx)*s+cx)*s;
+    const sampY=s=>((ay*s+by)*s+cy)*s;
+    const slopeX=s=>(3*ax*s+2*bx)*s+cx;
+    return t=>{
+      if(t<=0) return 0;
+      if(t>=1) return 1;
+      let s=t;
+      for(let i=0;i<8;i++){                    // Newton-Raphson solve for x(s)=t
+        const x=sampX(s)-t;
+        if(Math.abs(x)<1e-6) break;
+        const d=slopeX(s);
+        if(Math.abs(d)<1e-6) break;
+        s-=x/d;
+      }
+      return sampY(Math.min(1,Math.max(0,s)));
+    };
+  }
+  const NAMED_EASE={
+    'linear':[0,0,1,1], 'ease':[0.25,0.1,0.25,1], 'ease-in':[0.42,0,1,1],
+    'ease-out':[0,0,0.58,1], 'ease-in-out':[0.42,0,0.58,1]
+  };
+  function parseEase(str){
+    const m=String(str).match(/cubic-bezier\(([^)]+)\)/);
+    if(m){
+      const p=m[1].split(',').map(Number);
+      if(p.length===4&&p.every(n=>isFinite(n))) return bezierEase(p[0],p[1],p[2],p[3]);
+    }
+    const n=NAMED_EASE[String(str).trim()]||NAMED_EASE.linear;
+    return bezierEase(n[0],n[1],n[2],n[3]);
+  }
+  /* Build a shading keyframe block whose opacity tracks a flap's angle.
+     `rising` = the bottom flap (angle 90°→0°, so its shading fades OUT as it
+     comes into the light); otherwise the top flap's fall (0°→90°), used to
+     drive the shadow it CASTS on the static bottom half. Peak darkness lands
+     exactly when the flap is edge-on, so nothing has to snap back. */
+  const SHADE_STEPS=20;
+  const pctStop=t=>(t*100).toFixed(2).replace(/\.?0+$/,'')+'%';
+  function shadeKeyframes(name,easeFn,peak,rising){
+    let out='@keyframes '+name+'{';
+    for(let i=0;i<=SHADE_STEPS;i++){
+      const t=i/SHADE_STEPS;
+      const p=easeFn(t);                       // eased rotation progress
+      const angle=rising?(1-p):p;              // normalised |angle| / 90°
+      const v=Math.sin(angle*Math.PI/2)*peak;  // light falloff as it turns away
+      out+=pctStop(t)+'{opacity:'+v.toFixed(4)+'}';
+    }
+    return out+'}';
+  }
+  /* The cast shadow needs two properties, not one: how FAR down the bottom half
+     the shadow has reached (scaleY), and how dark it is (opacity). Reach is what
+     makes it gradual — the shadow creeps down from the seam in step with the
+     falling flap rather than the whole half dimming together. Darkness only
+     partly tracks reach so the leading edge stays visible from the start. */
+  function castKeyframes(name,easeFn,peak){
+    let out='@keyframes '+name+'{';
+    for(let i=0;i<=SHADE_STEPS;i++){
+      const t=i/SHADE_STEPS;
+      const reach=Math.sin(easeFn(t)*Math.PI/2);
+      const dark=peak*(0.4+0.6*reach);
+      out+=pctStop(t)+'{transform:scaleY('+reach.toFixed(4)+');opacity:'+dark.toFixed(4)+'}';
+    }
+    return out+'}';
+  }
+  /* Apply a motion style: set the timing variables and rebuild EVERY flip
+     keyframe (rotation + both shading curves) so no preset is left running a
+     curve that was tuned for a different one. */
   function applyMotion(){
     if(S.motion==='instant'){
-      document.querySelectorAll('.flap').forEach(f=>f.remove());
+      document.querySelectorAll('.flap,.botshade').forEach(f=>f.remove());
       return;
     }
     const m=MOTION_MAP[S.motion]||MOTION_MAP.smooth;
@@ -550,14 +705,19 @@
     const fuKf=m.bounce===0
       ?'@keyframes fu{0%{transform:rotateX(90deg)}100%{transform:rotateX(0)}}'
       :'@keyframes fu{0%{transform:rotateX(90deg)}'+m.bounceAt+'%{transform:rotateX('+m.bounce+'deg)}100%{transform:rotateX(0)}}';
-    // Top hinge shadow: stay near-zero while the flap is front-facing, then
-    // darken late (peak at 90%) as it angles edge-on — not while still flat.
-    const fdsKf='@keyframes fds{0%{background:rgba(0,0,0,0)}55%{background:rgba(0,0,0,'+(m.shadowMax*0.14).toFixed(3)+')}90%{background:rgba(0,0,0,'+m.shadowMax+')}100%{background:rgba(0,0,0,0)}}';
-    // Bottom hinge shadow: start at the mode's full shadow, then ease to fully
-    // transparent by 85% so it is gone before the flap settles (no abrupt pop).
-    const fus60=(m.shadowMax*0.34).toFixed(3);
-    const fusKf='@keyframes fus{0%{background:rgba(0,0,0,'+m.shadowMax+')}60%{background:rgba(0,0,0,'+fus60+')}85%{background:rgba(0,0,0,0)}100%{background:rgba(0,0,0,0)}}';
-    kf.textContent=fuKf+fdsKf+fusKf;
+    const fdKf='@keyframes fd{0%{transform:rotateX(0)}100%{transform:rotateX(-90deg)}}';
+    // Cast shadow on the static bottom half, locked to the FALLING flap's angle.
+    const castKf=castKeyframes('fshCast',parseEase(m.topEase),m.shadowMax);
+    // The rising flap's own shading, locked to its own angle.
+    const botKf=shadeKeyframes('fshBot',parseEase(m.botEase),m.shadowMax,true);
+    kf.textContent=fdKf+fuKf+castKf+botKf;
+  }
+  /* How long a flip actually lasts for the active preset (ms), + a small
+     buffer. Used to time flap cleanup so it always matches the real animation
+     instead of a hardcoded constant. */
+  function flipTotalMs(){
+    const m=MOTION_MAP[S.motion]||MOTION_MAP.smooth;
+    return Math.round(Math.max(m.topDur,m.botDelay+m.botDur)*1000)+30;
   }
 
   /* ==========================================================================
@@ -581,7 +741,7 @@
     if(!t) return;
 
     if(S.motion==='instant'){
-      t.querySelectorAll('.flap').forEach(f=>f.remove());
+      t.querySelectorAll('.flap,.botshade').forEach(f=>f.remove());
       t.querySelector('.half.top .num').textContent=nv;
       t.querySelector('.half.bot .num').textContent=nv;
       return;
@@ -591,7 +751,11 @@
     // until the rising flap finishes covering it.
     t.querySelector('.half.top .num').textContent=nv;
     t.querySelector('.half.bot .num').textContent=ov;
-    t.querySelectorAll('.flap').forEach(f=>f.remove());
+    t.querySelectorAll('.flap,.botshade').forEach(f=>f.remove());
+
+    // Shadow cast by the falling flap onto the bottom half it descends over.
+    // Appended first so it paints under both flaps.
+    const bs=document.createElement('div'); bs.className='botshade'; t.appendChild(bs);
 
     const ft=document.createElement('div'); ft.className='flap flap-top';
     ft.innerHTML='<div class="num">'+ov+'</div>'; t.appendChild(ft);   // falling top shows old
@@ -601,8 +765,8 @@
     setTimeout(()=>{
       const tb=document.getElementById(id);
       if(tb) tb.querySelector('.half.bot .num').textContent=nv;
-      ft.remove(); fb.remove();
-    },560);   // just past the 550ms flip end — keeps the bounce, drops the linger window
+      ft.remove(); fb.remove(); bs.remove();
+    },flipTotalMs());   // derived from the active preset, so cleanup always lands just past the flip
   }
 
   /* Read the clock into padded HH / MM strings (+ AM/PM in 12h mode). */
@@ -661,27 +825,26 @@
     // darkness depends on the tile colour, not the theme: a light tile needs a
     // soft dark line; a dark tile needs a stronger one to read against it.
     r.setProperty('--tile-seam', getTileTextColor(S.tile)==='#1a1a1a' ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.6)');
-    if(S.theme==='dark'){
+    if(effectiveTheme()==='dark'){
       r.setProperty('--tile-shadow','0 2px 8px rgba(0,0,0,0.3),0 4px 20px rgba(0,0,0,0.25)');
       r.setProperty('--tile-highlight','rgba(255,255,255,0.08)');
       r.setProperty('--tile-gradient','linear-gradient(to bottom,rgba(255,255,255,0.05) 0%,transparent 50%)');
       r.setProperty('--popup-shadow','0 8px 32px rgba(0,0,0,0.4),0 2px 12px rgba(0,0,0,0.3)');
-      r.setProperty('--flap-shadow-top','0 2px 4px rgba(0,0,0,0.5)');
-      r.setProperty('--flap-shadow-bot','0 -2px 4px rgba(0,0,0,0.5)');
-      r.setProperty('--flap-gradient-strength','0.25');
+      // Shading gradient: darkest at the hinge, softer at the free edge.
+      r.setProperty('--flap-shade-strong','1');
+      r.setProperty('--flap-shade-soft','0.55');
     }else{
       r.setProperty('--tile-shadow','0 2px 4px rgba(0,0,0,0.08),0 4px 12px rgba(0,0,0,0.12)');
       r.setProperty('--tile-highlight','rgba(255,255,255,0.6)');
       r.setProperty('--tile-gradient','linear-gradient(to bottom,rgba(255,255,255,0.08) 0%,transparent 50%)');
       r.setProperty('--popup-shadow','0 8px 24px rgba(0,0,0,0.12),0 2px 8px rgba(0,0,0,0.08)');
-      r.setProperty('--flap-shadow-top','0 2px 4px rgba(0,0,0,0.15)');
-      r.setProperty('--flap-shadow-bot','0 -2px 4px rgba(0,0,0,0.15)');
-      r.setProperty('--flap-gradient-strength','0.15');
+      r.setProperty('--flap-shade-strong','0.62');
+      r.setProperty('--flap-shade-soft','0.3');
     }
     $cont.style.background=S.bg;
     $wrapper.style.transform='scale('+S.zoom/100+')';
     pop.classList.remove('pop-light','pop-dark');
-    pop.classList.add(S.theme==='dark'?'pop-dark':'pop-light');
+    pop.classList.add(effectiveTheme()==='dark'?'pop-dark':'pop-light');
   }
 
   /* ==========================================================================
@@ -868,7 +1031,7 @@
       if(!container) return;
       container.querySelectorAll('.sw:not(.sw-cu)').forEach(s=>s.remove());
       const cuSw=container.querySelector('.sw-cu');
-      SWATCH_PALETTES[key][S.theme].forEach(c=>{
+      SWATCH_PALETTES[key][effectiveTheme()].forEach(c=>{
         const sw=document.createElement('div');
         const light=getTileTextColor(c)==='#1a1a1a';        // light swatch → dark check mark
         sw.className='sw '+(light?'lt':'dk')+(c.toLowerCase()==='#ffffff'?' sw-wh':'');
@@ -916,16 +1079,33 @@
 
   setupTg('gMode','mode',renderClock);
   setupTg('gMotion','motion',applyMotion);
-  setupTg('gTheme','theme',()=>{
-    const prev=S.theme==='dark'?'light':'dark';
-    // Migrate text colours by palette index; custom values stay unchanged.
+  /* Migrate derived colours (text swatches, tile, body bg) from one resolved
+     light/dark theme to the other. Shared by explicit Light/Dark/Auto clicks
+     and by the system colour-scheme change listener below, so both paths
+     always agree on how a theme transition should look. */
+  function onEffectiveThemeChange(prev,next){
+    if(prev===next) return;
     ['timeText','dateText'].forEach(k=>{
       const idx=SWATCH_PALETTES[k][prev].findIndex(c=>c.toLowerCase()===String(S[k]).toLowerCase());
-      if(idx>=0) S[k]=SWATCH_PALETTES[k][S.theme][idx];
+      if(idx>=0) S[k]=SWATCH_PALETTES[k][next][idx];
     });
-    // Tile + body bg follow the theme's defaults.
-    if(S.theme==='dark'){ S.tile='#ffffff'; S.bg='#191919'; }
+    if(next==='dark'){ S.tile='#ffffff'; S.bg='#191919'; }
     else { S.tile='#2a2a2a'; S.bg='#ffffff'; }
+  }
+  setupTg('gTheme','theme',()=>{
+    const next=effectiveTheme();
+    const prev=S._lastEffective!==null?S._lastEffective:(next==='dark'?'light':'dark');
+    onEffectiveThemeChange(prev,next);
+    S._lastEffective=next;
+    save(); applyAll(); renderSwatches(); hlAll(); hlPreset();
+  });
+  // Live-update while Auto is selected and the OS/browser colour scheme changes.
+  _mq.addEventListener('change',()=>{
+    if(S.theme!=='auto') return;
+    const next=effectiveTheme();
+    if(next===S._lastEffective) return;
+    onEffectiveThemeChange(S._lastEffective,next);
+    S._lastEffective=next;
     save(); applyAll(); renderSwatches(); hlAll(); hlPreset();
   });
   setupTg('gFmt','format',()=>tick(false));
@@ -935,7 +1115,11 @@
   zSlider.addEventListener('input',e=>{ S.zoom=parseInt(e.target.value); zLabel.textContent=S.zoom+'%'; save(); applyAll(); applyResponsive(); });
 
   document.getElementById('rstBtn').addEventListener('click',()=>{
-    S={...DEF}; save(); applyAll(); applyFont(); applyMotion(); renderSwatches(); hlAll();
+    S={...DEF};
+    const eff=effectiveTheme();
+    if(eff!=='light') onEffectiveThemeChange('light',eff);
+    S._lastEffective=eff;
+    save(); applyAll(); applyFont(); applyMotion(); renderSwatches(); hlAll();
     syncTg('gMode',S.mode); syncTg('gTheme',S.theme); syncTg('gFmt',S.format); syncTg('gDisp',S.display); syncTg('gMotion',S.motion);
     zSlider.value=S.zoom; zLabel.textContent=S.zoom+'%';
     pickerKeys.forEach(k=>pickers[k].cpk.classList.remove('open'));
@@ -945,7 +1129,22 @@
   /* ==========================================================================
      12. INIT
      ========================================================================== */
-  load(); applyAll(); applyFont(); applyMotion(); renderSwatches(); hlAll();
+  load();
+  // Bootstrap Auto's derived colours: fresh installs start from DEF's (light)
+  // palette, so only snap if the resolved theme differs from that baseline;
+  // returning Auto users get re-snapped only if the system theme actually
+  // changed since they last had the widget open. Explicit Light/Dark users
+  // never touch this branch, so their saved colours are never disturbed.
+  {
+    const eff=effectiveTheme();
+    if(S.theme==='auto'){
+      if(S._lastEffective===null){ if(eff!=='light') onEffectiveThemeChange('light',eff); }
+      else if(S._lastEffective!==eff){ onEffectiveThemeChange(S._lastEffective,eff); }
+    }
+    S._lastEffective=eff;
+  }
+  save();
+  applyAll(); applyFont(); applyMotion(); renderSwatches(); hlAll();
   buildPresetGrid(); hlPreset(); syncFont();
   renderClock();
   syncTg('gMode',S.mode); syncTg('gTheme',S.theme); syncTg('gFmt',S.format); syncTg('gDisp',S.display); syncTg('gMotion',S.motion);
