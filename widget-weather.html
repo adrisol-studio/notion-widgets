@@ -39,8 +39,8 @@
     .container { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--bg-color, transparent); transition: background .5s; }
     .wrapper { position: relative; display: flex; flex-direction: column; padding: 20px 24px; transform-origin: center; transition: transform .3s; color: var(--text, #37352f); max-width: 100%; }
 
-    /* ===== Gear button (appears on hover, top-right) ===== */
-    .gear { position: absolute; top: 2px; right: 2px; width: 24px; height: 24px; background: none; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10; opacity: .45; transform: scale(1); transition: opacity .2s, transform .2s; border-radius: 5px; }
+    /* ===== Gear button (appears on hover, top-left) ===== */
+    .gear { position: absolute; top: 2px; left: 2px; width: 24px; height: 24px; background: none; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10; opacity: .45; transform: scale(1); transition: opacity .2s, transform .2s; border-radius: 5px; }
     .gear.pin { opacity: .7; }
     .gear:hover { opacity: 1 !important; background: rgba(128,128,128,.18); }
     @media (hover: hover) {
@@ -49,7 +49,7 @@
     }
     .gear svg { width: 15px; height: 15px; fill: var(--text, #37352f); transition: fill .3s; }
 
-    /* ===== Multi-city tabs (top-right of wrapper, below the gear) ===== */
+    /* ===== Multi-city tabs (top-right of wrapper, below the location line) ===== */
     .city-tabs { position: absolute; top: 34px; right: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; z-index: 9; width: max-content; direction: rtl; }
     .city-tab { direction: ltr; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: .06em; padding: 5px 12px; border-radius: 20px; border: none; cursor: pointer; background: rgba(128,128,128,.16); color: var(--text, #37352f); opacity: .5; transition: opacity .15s, background .15s; }
     .city-tab:hover { opacity: .85; }
@@ -102,13 +102,23 @@
     .compact-hilo { display: none; font-size: 13px; font-weight: 600; gap: 8px; opacity: .78; margin-top: 3px; }
     .compact-hilo .lo { opacity: .6; }
 
-    /* ===== Hourly strip ===== */
-    .hr { display: flex; gap: 8px; margin-top: 16px; height: 92px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; width: 0; min-width: 100%; scrollbar-color: color-mix(in srgb, var(--text, #37352f) 35%, transparent) transparent; }
-    .hr::-webkit-scrollbar { height: 4px; }
-    .hr::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text, #37352f) 35%, transparent); border-radius: 4px; }
-    .hr::-webkit-scrollbar-track { background: transparent; }
-    body.ambient .hr { scrollbar-color: rgba(255,255,255,.5) transparent; }
-    body.ambient .hr::-webkit-scrollbar-thumb { background: rgba(255,255,255,.5); }
+    /* ===== Hourly strip (scrollbar hidden — paged by the .hr-nav arrows) ===== */
+    .hr { display: flex; gap: 8px; height: 92px; overflow-x: auto; width: 0; min-width: 100%; scrollbar-width: none; }
+    .hr::-webkit-scrollbar { display: none; }
+
+    /* Arrow buttons live in the wrapper's 24px padding gutters, never over a tile.
+       .can = "there is something to scroll this way" (set from JS on scroll/resize). */
+    .hr-wrap { position: relative; width: 0; min-width: 100%; margin-top: 16px; }
+    .hr-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 20px; height: 46px; display: flex; align-items: center; justify-content: center; border: none; border-radius: 6px; background: rgba(128,128,128,.14); color: inherit; cursor: pointer; padding: 0; z-index: 8; opacity: 0; pointer-events: none; transition: opacity .2s, background .15s; }
+    .hr-prev { left: -22px; } .hr-next { right: -22px; }
+    .hr-nav.can { opacity: .5; pointer-events: auto; }
+    @media (hover: hover) {
+      .hr-nav.can { opacity: 0; pointer-events: none; }
+      .wrapper:hover .hr-nav.can { opacity: .7; pointer-events: auto; }
+    }
+    .hr-nav:hover { opacity: 1 !important; background: rgba(128,128,128,.28); }
+    body.ambient .hr-nav { background: rgba(255,255,255,.22); }
+    body.ambient .hr-nav:hover { background: rgba(255,255,255,.34); }
     .hr-item { flex: 0 0 var(--hr-w, 52px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 8px 4px; border-radius: 10px; background: rgba(128,128,128,.07); transition: background .3s; }
     .hr-time { font-size: 11px; font-weight: 700; opacity: .75; letter-spacing: .02em; white-space: nowrap; }
     .hr-icon svg { width: 30px; height: 30px; }
@@ -134,7 +144,7 @@
     /* ===== Layout modes ===== */
     body.lay-full .wrapper { min-width: var(--day-w, 320px); }
     /* Compact: hide everything except the current temperature. */
-    body.lay-compact .fc, body.lay-compact .hr, body.lay-compact .meta-row, body.lay-compact .city-tabs { display: none; }
+    body.lay-compact .fc, body.lay-compact .hr-wrap, body.lay-compact .meta-row, body.lay-compact .city-tabs { display: none; }
     body.lay-compact .now-icon svg { width: 86px; height: 86px; }
     body.lay-compact .temp { font-size: 64px; }
     body.lay-compact .compact-bottom { display: flex; }
@@ -684,7 +694,9 @@
     let hourlyHtml='';
     if(DATA.hourly){
       let start=curHourIdx(); if(start<0) start=0;
-      hourlyHtml='<div class="hr">';
+      hourlyHtml='<div class="hr-wrap">'
+        +`<button class="hr-nav hr-prev" id="hrPrev" title="Earlier" aria-label="Scroll to earlier hours"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>`
+        +'<div class="hr" id="hrStrip">';
       for(let i=start;i<start+12&&i<DATA.hourly.time.length;i++){
         const hh=new Date(DATA.hourly.time[i]+'Z').getUTCHours();
         const di=codeInfo(resolveCode(DATA.hourly.weather_code[i], DATA.hourly.precipitation[i], DATA.hourly.cloud_cover?DATA.hourly.cloud_cover[i]:null));
@@ -692,7 +704,9 @@
         const label=(i===start)?'Now':hr12(hh);
         hourlyHtml+=`<div class="hr-item"><div class="hr-time">${label}</div><div class="hr-icon">${iconSVG(di.t,hDay)}</div><div class="hr-temp">${Math.round(DATA.hourly.temperature_2m[i])}°</div></div>`;
       }
-      hourlyHtml+='</div>';
+      hourlyHtml+='</div>'
+        +`<button class="hr-nav hr-next" id="hrNext" title="Later" aria-label="Scroll to later hours"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>`
+        +'</div>';
     }
 
     // Build daily forecast HTML.
@@ -731,6 +745,26 @@
 
     c.querySelector('#hourlyBtn')?.addEventListener('click',()=>{ S.hourlyExpanded=true; save(); render(); });
     c.querySelector('#backBtn')?.addEventListener('click',()=>{ S.hourlyExpanded=false; save(); render(); });
+
+    // Hourly strip paging. One click = one page + one gap, so tiles keep landing
+    // on a boundary and stay aligned with the daily columns below.
+    const hs=c.querySelector('#hrStrip');
+    window._hrRO?.disconnect();                    // strip is rebuilt every render — drop the stale observer
+    if(hs){
+      const prev=c.querySelector('#hrPrev'), next=c.querySelector('#hrNext');
+      const step=()=>hs.clientWidth+8;
+      const upd=()=>{
+        const max=hs.scrollWidth-hs.clientWidth;
+        prev.classList.toggle('can', hs.scrollLeft>1);
+        next.classList.toggle('can', hs.scrollLeft<max-1);
+      };
+      prev.addEventListener('click',()=>hs.scrollBy({left:-step(),behavior:'smooth'}));
+      next.addEventListener('click',()=>hs.scrollBy({left: step(),behavior:'smooth'}));
+      hs.addEventListener('scroll',upd,{passive:true});
+      window._hrRO=new ResizeObserver(upd);        // day-count/zoom changes resize the strip without a render
+      window._hrRO.observe(hs);
+      upd();
+    }
   }
 
   /* ==========================================================================
