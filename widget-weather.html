@@ -88,7 +88,9 @@
     .now-icon { flex-shrink: 0; }
     .now-icon svg { width: 84px; height: 84px; }
     .now-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-    .loc { font-family: 'Roboto Condensed', sans-serif; font-weight: 700; font-size: 14px; letter-spacing: .05em; text-transform: uppercase; opacity: .72; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; top: -4px; }
+    /* `left` is set from render() so the city name lines up with the first digit
+       of the temperature, which .temp's scaleX insets from its layout box. */
+    .loc { font-family: 'Roboto Condensed', sans-serif; font-weight: 700; font-size: 14px; letter-spacing: .05em; text-transform: uppercase; opacity: .72; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; top: -4px; left: 0; }
     .loc-time { font-weight: 500; opacity: .55; letter-spacing: .02em; }
     .temp-row { display: flex; align-items: last baseline; gap: 2px; }
     .temp-side { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -649,6 +651,15 @@
     const mm=String(m).padStart(2,'0');
     return `${hh}:${mm} ${ap}`;
   }
+  /* Today's date at the location. Same offset trick as locationTime(), so the
+     getUTC* accessors read the location's wall-clock date, not the viewer's. */
+  function locationDate(){
+    if(!DATA||DATA.utc_offset_seconds==null) return '';
+    const d=new Date(Date.now()+DATA.utc_offset_seconds*1000);
+    const dow=(S.dayfmt==='full'?DAYS_FULL:DAYS_SHORT)[d.getUTCDay()];
+    return `${dow}, ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
+  }
+  function locationStamp(){ const d=locationDate(), t=locationTime(); return d&&t?`${d} · ${t}`:(d||t); }
 
   function showMsg(html){ document.getElementById('content').innerHTML=`<div class="msg">${html}</div>`; }
 
@@ -679,11 +690,11 @@
         :`<button class="back-btn" id="hourlyBtn" title="Show hourly forecast"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 1.8"/></svg>Hourly</button>`;
     }
 
-    const locTime=locationTime();
+    const locStamp=locationStamp();
     let html=`<div class="now">
       <div class="now-icon">${iconSVG(info.t,isDay)}</div>
       <div class="now-main">
-        <div class="loc">${esc(S.place)}${locTime?`<span class="loc-time"> · ${locTime}</span>`:''}</div>
+        <div class="loc">${esc(S.place)}${locStamp?`<span class="loc-time"> · ${locStamp}</span>`:''}</div>
         <div class="temp-row"><span class="temp">${temp}<span class="deg">°</span></span><div class="temp-side">${S.cond?`<div class="cond">${info.l}</div>`:''}${S.feels?`<div class="feels">Feels like ${feels}°</div>`:''}</div></div>
         ${toggleBtnHtml+chips?`<div class="meta-row">${toggleBtnHtml+chips}</div>`:''}
       </div>
@@ -739,9 +750,20 @@
     html+=`<div class="credit"><a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather by Open-Meteo</a></div>`;
     c.innerHTML=html;
 
-    // Update the local clock in the location name every 15 s.
+    // .temp is squeezed with scaleX from its centre, so its digits sit inset from
+    // the layout box. Nudge the header line right by that inset (3-8px depending
+    // on how many digits) so the city name starts level with the first digit.
+    const tEl=c.querySelector('.temp'), lEl=c.querySelector('.loc');
+    if(tEl&&lEl){
+      const tf=getComputedStyle(tEl).transform;
+      const sx=(tf&&tf!=='none')?new DOMMatrixReadOnly(tf).a:1;
+      lEl.style.left=`${tEl.offsetWidth*(1-sx)/2}px`;
+    }
+
+    // Update the local date + clock in the location name every 15 s.
+    // Must rewrite the whole stamp, not just the time, or the date gets wiped.
     clearInterval(window._locTimerID);
-    window._locTimerID=setInterval(()=>{ const el=document.querySelector('.loc-time'); if(el) el.textContent=` · ${locationTime()}`; },15000);
+    window._locTimerID=setInterval(()=>{ const el=document.querySelector('.loc-time'); if(el) el.textContent=` · ${locationStamp()}`; },15000);
 
     c.querySelector('#hourlyBtn')?.addEventListener('click',()=>{ S.hourlyExpanded=true; save(); render(); });
     c.querySelector('#backBtn')?.addEventListener('click',()=>{ S.hourlyExpanded=false; save(); render(); });
