@@ -396,6 +396,7 @@
   let DATA=null, AQ=null, refreshTimer=null;
   let cache={};                         // per-city in-memory: "lat,lon" → {DATA, AQ, ts}
   const STALE_MS=10*60*1000;            // background-refresh a cached city only if older than this
+  const BASE_SCALE=0.9;                 // 100% on the zoom slider renders at 90% of raw layout size
 
   function cityKey(c){ return c.lat+','+c.lon; }
   function setLoading(on){ document.getElementById('wrapper').classList.toggle('loading',on); }
@@ -811,7 +812,7 @@
   }
   function applyAll(){
     const r=document.documentElement.style;
-    document.getElementById('wrapper').style.transform=`scale(${S.zoom/100})`;
+    document.getElementById('wrapper').style.transform=`scale(${S.zoom/100*BASE_SCALE})`;
     const n=parseInt(S.days);
     r.setProperty('--hr-w',`calc((100% - ${(n-1)*8}px) / ${n})`);
     r.setProperty('--day-w',`${n*52+(n-1)*8+48}px`);
