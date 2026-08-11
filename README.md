@@ -1,6 +1,6 @@
 # Notion Widgets
 
-Custom widgets built for the **Dark Academia XP Student Planner** Notion template.  
+Custom widgets built for the **Dark XP Student Planner** Notion template.
 Hosted on GitHub Pages — embed using Notion's `/embed` block.
 
 ---
