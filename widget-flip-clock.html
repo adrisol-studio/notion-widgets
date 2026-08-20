@@ -47,7 +47,12 @@
       --digit-size: 82px;
       --digit-ls: 0.02em;
       --flip-top-dur: .3s;  --flip-top-ease: cubic-bezier(0.4,0,1,1);
-      --flip-bot-dur: .3s;  --flip-bot-ease: cubic-bezier(0,0,0.2,1);  --flip-bot-delay: .25s;
+      --flip-bot-dur: .25s; --flip-bot-ease: cubic-bezier(0.2,0.3,0.95,0.7);
+      /* One rigid card does the whole flip, so the rising half must start at the
+         exact instant the falling half reaches 90deg: the delay always EQUALS
+         --flip-top-dur (applyMotion derives it, it is never a free number).
+         Overlap shows the same card in two places at once; a gap stalls it. */
+      --flip-bot-delay: .3s;
       --gear-color: #ffffff;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -218,10 +223,19 @@
        swinging down toward the viewer doesn't darken — it casts a shadow onto
        the half it is descending over. That cast shadow is .botshade below. */
 
-    /* Cast shadow laid over the STATIC bottom half while the top flap falls
-       across it. Darkest at the seam (where the falling flap is closest) and
-       softening downward. Added per-flip by flipTile() and sits above the
-       static halves but below the flaps, so the rising flap covers it. */
+    /* THE ONLY SHADING IN THE FLIP. It is painted on the STATIC bottom half —
+       the surface the card is moving over — never on the card itself. Darkest
+       at the seam (where the card is closest) and softening downward.
+
+       It grows while the card falls and then simply HOLDS: it does not fade
+       out. An opaque card does not dissolve the shadow under it, it covers it,
+       so the shadow disappears purely by occlusion as the card lands. That is
+       what keeps the end of the flip seamless — by the time flipTile() removes
+       this element it is already 100% hidden behind the landed card, so its
+       removal can't show. (Shading the card itself is what produced the old
+       bug: a veil left sitting on a card that had visibly already landed.)
+
+       Sits above the static halves but below both flaps. */
     .botshade {
       position: absolute; left: 0; right: 0; bottom: 0; height: 50%;
       z-index: 1; pointer-events: none;
@@ -252,26 +266,30 @@
       animation: fu var(--flip-bot-dur) var(--flip-bot-ease) var(--flip-bot-delay) forwards;
     }
     .flap-bot .num { top: -55px; }
-    .flap-bot::after {
-      content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
-      border-radius: 0 0 10px 10px;
-      background: linear-gradient(to bottom,
-        rgba(0,0,0,var(--flap-shade-strong,0.9)) 0%,
-        rgba(0,0,0,var(--flap-shade-soft,0.5)) 100%);
-      opacity: 0;
-      will-change: opacity;
-      animation: fshBot var(--flip-bot-dur) linear var(--flip-bot-delay) both;
-    }
+    /* NOTE: like .flap-top, the rising flap deliberately carries NO shading of
+       its own. It is the lit face of the card coming to rest, and it must be
+       pixel-identical to the .half.bot it is replaced by — any shade on it is
+       still there at the moment it looks landed, and then has to disappear.
+       Depth comes from the shadow it COVERS (.botshade), not from a wash on it. */
 
-    /* Flip keyframes: fd = top flap falls, fu = bottom flap rises (with bounce).
-       fd/fu are the rotation; the shading pair (fshCast/fshBot) is generated in
-       JS per motion style — see applyMotion(), which rebuilds ALL of them so
-       every preset stays internally consistent. The definitions here are only
-       first-paint fallbacks for the default "smooth" preset. */
+    /* Flip keyframes: fd = top flap falls, fu = bottom flap rises (with bounce),
+       fshCast = the cast shadow. All three are regenerated in JS per motion
+       style — see applyMotion() — so every preset stays internally consistent.
+       The definitions here are only first-paint fallbacks for "smooth". */
     @keyframes fd  { 0% { transform: rotateX(0); }     100% { transform: rotateX(-90deg); } }
-    @keyframes fu  { 0% { transform: rotateX(90deg); } 83%  { transform: rotateX(-3deg); } 100% { transform: rotateX(0); } }
+    /* The fall and the settle need DIFFERENT curves, so fu carries a timing
+       function PER SEGMENT: the card keeps accelerating into the stop
+       (0 -> 83%), then eases out of the small rebound (83% -> 100%). A single
+       ease-out across the whole rise had the card reach its resting position
+       barely a third of the way through its own animation and then just sit
+       there — which is exactly the window in which anything left on it reads
+       as a veil on a stationary card. */
+    @keyframes fu  {
+      0%   { transform: rotateX(90deg); animation-timing-function: cubic-bezier(0.2,0.3,0.95,0.7); }
+      83%  { transform: rotateX(-3deg); animation-timing-function: cubic-bezier(0.25,0.1,0.25,1); }
+      100% { transform: rotateX(0); }
+    }
     @keyframes fshCast { 0% { transform: scaleY(0); opacity: 0.14; } 100% { transform: scaleY(1); opacity: 0.35; } }
-    @keyframes fshBot  { 0% { opacity: 0.35; } 100% { opacity: 0; } }
 
     .ampm {
       font-size: 18px;
@@ -602,23 +620,29 @@
   /* ==========================================================================
      4. FLIP MOTION STYLES
      ========================================================================== */
+  /* topEase drives the fall (0 -> 90deg), botEase the continuation of the SAME
+     card (90 -> 180deg) up to the moment of impact, settleEase the small rebound
+     after it. There is deliberately no botDelay: the rise always starts where
+     the fall ends, so applyMotion() derives it from topDur.
+     Both eases end fast. A card hinged at its middle is an inverted pendulum: it
+     accelerates the whole way round and stops by hitting the stack, so it must
+     never look like it has arrived before its animation is over. */
   const MOTION_MAP={
-    smooth:     {topDur:0.3,  topEase:'cubic-bezier(0.4,0,1,1)',   botDur:0.3,  botEase:'cubic-bezier(0,0,0.2,1)',   botDelay:0.25, bounce:-3, bounceAt:83, shadowMax:0.35},
-    mechanical: {topDur:0.2,  topEase:'cubic-bezier(0.55,0,1,1)',  botDur:0.25, botEase:'cubic-bezier(0,0,0.15,1)',  botDelay:0.18, bounce:-6, bounceAt:80, shadowMax:0.5},
-    minimal:    {topDur:0.15, topEase:'ease-in',                    botDur:0.15, botEase:'ease-out',                  botDelay:0.13, bounce:0,  bounceAt:0,  shadowMax:0},
+    smooth:     {topDur:0.3,  topEase:'cubic-bezier(0.4,0,1,1)',   botDur:0.25, botEase:'cubic-bezier(0.2,0.3,0.95,0.7)',    settleEase:'cubic-bezier(0.25,0.1,0.25,1)', bounce:-3, bounceAt:83, shadowMax:0.35},
+    mechanical: {topDur:0.2,  topEase:'cubic-bezier(0.55,0,1,1)',  botDur:0.23, botEase:'cubic-bezier(0.15,0.35,0.95,0.75)', settleEase:'cubic-bezier(0.3,0,0.2,1)',     bounce:-6, bounceAt:80, shadowMax:0.5},
+    minimal:    {topDur:0.15, topEase:'ease-in',                   botDur:0.13, botEase:'cubic-bezier(0.2,0.3,0.95,0.7)',    settleEase:'linear',                        bounce:0,  bounceAt:0,  shadowMax:0},
     instant:    null
   };
   /* ---- Easing maths -------------------------------------------------------
      CSS applies a timing-function to EVERY keyframe segment, not once across
-     the whole animation. That is what used to break the shading: the rotation
-     had 2 stops (one smooth eased sweep) while the shadow had 4, so its curve
-     restarted at each stop and crammed the final alpha drop into a few ms —
-     read as an instant colour pop.
+     the whole animation, so a shading curve and a rotation curve that do not
+     share their stops drift apart, and the shading lands its alpha change in
+     the wrong few milliseconds — read as an instant colour pop.
 
-     The fix: sample the rotation's easing curve here, convert each sample into
-     the flap's real angle, and emit the shading as many small LINEAR steps.
-     The shading is then a pure function of the visible angle and can never
-     drift from the motion, whatever easing or duration a preset uses. */
+     So the cast shadow is never authored as its own eased curve: we sample the
+     rotation's easing here, turn each sample into the card's real angle, and
+     emit the shadow as many small LINEAR steps. It is then a pure function of
+     the angle actually on screen, whatever easing or duration a preset uses. */
   function bezierEase(x1,y1,x2,y2){
     const cx=3*x1, bx=3*(x2-x1)-cx, ax=1-cx-bx;
     const cy=3*y1, by=3*(y2-y1)-cy, ay=1-cy-by;
@@ -652,29 +676,18 @@
     const n=NAMED_EASE[String(str).trim()]||NAMED_EASE.linear;
     return bezierEase(n[0],n[1],n[2],n[3]);
   }
-  /* Build a shading keyframe block whose opacity tracks a flap's angle.
-     `rising` = the bottom flap (angle 90°→0°, so its shading fades OUT as it
-     comes into the light); otherwise the top flap's fall (0°→90°), used to
-     drive the shadow it CASTS on the static bottom half. Peak darkness lands
-     exactly when the flap is edge-on, so nothing has to snap back. */
   const SHADE_STEPS=20;
   const pctStop=t=>(t*100).toFixed(2).replace(/\.?0+$/,'')+'%';
-  function shadeKeyframes(name,easeFn,peak,rising){
-    let out='@keyframes '+name+'{';
-    for(let i=0;i<=SHADE_STEPS;i++){
-      const t=i/SHADE_STEPS;
-      const p=easeFn(t);                       // eased rotation progress
-      const angle=rising?(1-p):p;              // normalised |angle| / 90°
-      const v=Math.sin(angle*Math.PI/2)*peak;  // light falloff as it turns away
-      out+=pctStop(t)+'{opacity:'+v.toFixed(4)+'}';
-    }
-    return out+'}';
-  }
   /* The cast shadow needs two properties, not one: how FAR down the bottom half
      the shadow has reached (scaleY), and how dark it is (opacity). Reach is what
      makes it gradual — the shadow creeps down from the seam in step with the
-     falling flap rather than the whole half dimming together. Darkness only
-     partly tracks reach so the leading edge stays visible from the start. */
+     falling card rather than the whole half dimming together. Darkness only
+     partly tracks reach so the leading edge stays visible from the start.
+
+     It ends at full reach and full darkness and STAYS there (`forwards`). It
+     must not fade: from 90° on, the same card is coming down over this shadow
+     and hides it by simply being opaque. Fading it too would be the shadow
+     disappearing twice — once correctly, once as a wash on the landed card. */
   function castKeyframes(name,easeFn,peak){
     let out='@keyframes '+name+'{';
     for(let i=0;i<=SHADE_STEPS;i++){
@@ -699,25 +712,32 @@
     r.setProperty('--flip-top-ease',m.topEase);
     r.setProperty('--flip-bot-dur',m.botDur+'s');
     r.setProperty('--flip-bot-ease',m.botEase);
-    r.setProperty('--flip-bot-delay',m.botDelay+'s');
+    // Derived, never stored: the rise begins the instant the fall ends, because
+    // it is the same card. See the --flip-bot-delay note in the stylesheet.
+    r.setProperty('--flip-bot-delay',m.topDur+'s');
     let kf=document.getElementById('motion-kf');
     if(!kf){ kf=document.createElement('style'); kf.id='motion-kf'; document.head.appendChild(kf); }
+    // Per-segment timing functions: fall into the stop, then ease out of the
+    // rebound. They live inside the keyframes because CSS re-applies the
+    // element's own timing function to every segment, which would otherwise
+    // ease the rebound in as well and stretch the apparent landing.
     const fuKf=m.bounce===0
       ?'@keyframes fu{0%{transform:rotateX(90deg)}100%{transform:rotateX(0)}}'
-      :'@keyframes fu{0%{transform:rotateX(90deg)}'+m.bounceAt+'%{transform:rotateX('+m.bounce+'deg)}100%{transform:rotateX(0)}}';
+      :'@keyframes fu{0%{transform:rotateX(90deg);animation-timing-function:'+m.botEase+'}'
+        +m.bounceAt+'%{transform:rotateX('+m.bounce+'deg);animation-timing-function:'+m.settleEase+'}'
+        +'100%{transform:rotateX(0)}}';
     const fdKf='@keyframes fd{0%{transform:rotateX(0)}100%{transform:rotateX(-90deg)}}';
-    // Cast shadow on the static bottom half, locked to the FALLING flap's angle.
+    // Cast shadow on the static bottom half, locked to the FALLING card's angle.
+    // It is the ONLY shading in the flip; nothing is painted on either flap.
     const castKf=castKeyframes('fshCast',parseEase(m.topEase),m.shadowMax);
-    // The rising flap's own shading, locked to its own angle.
-    const botKf=shadeKeyframes('fshBot',parseEase(m.botEase),m.shadowMax,true);
-    kf.textContent=fdKf+fuKf+castKf+botKf;
+    kf.textContent=fdKf+fuKf+castKf;
   }
   /* How long a flip actually lasts for the active preset (ms), + a small
      buffer. Used to time flap cleanup so it always matches the real animation
      instead of a hardcoded constant. */
   function flipTotalMs(){
     const m=MOTION_MAP[S.motion]||MOTION_MAP.smooth;
-    return Math.round(Math.max(m.topDur,m.botDelay+m.botDur)*1000)+30;
+    return Math.round((m.topDur+m.botDur)*1000)+30;
   }
 
   /* ==========================================================================
