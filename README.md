@@ -9,12 +9,12 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
 
 | Widget | Link |
 |--------|------|
-| 🌦 Weather | https://harshkgupta767-dev-works.github.io/notion-widgets/widget-weather.html |
-| 🕰 Flip Clock | https://harshkgupta767-dev-works.github.io/notion-widgets/widget-flip-clock.html |
-| ⏱ Pomodoro Timer | https://harshkgupta767-dev-works.github.io/notion-widgets/widget-pomodoro.html |
-| 🌄 Scenic Pomodoro | https://harshkgupta767-dev-works.github.io/notion-widgets/widget-pomodoro-scenic.html |
-| 🎵 Music Player | https://harshkgupta767-dev-works.github.io/notion-widgets/widget-music-player.html |
-| 🌧 Matrix Rain | https://harshkgupta767-dev-works.github.io/notion-widgets/widget-matrix.html |
+| 🌦 Weather | https://adrisol-studio.github.io/notion-widgets/widget-weather.html |
+| 🕰 Flip Clock | https://adrisol-studio.github.io/notion-widgets/widget-flip-clock.html |
+| ⏱ Pomodoro Timer | https://adrisol-studio.github.io/notion-widgets/widget-pomodoro.html |
+| 🌄 Scenic Pomodoro | https://adrisol-studio.github.io/notion-widgets/widget-pomodoro-scenic.html |
+| 🎵 Music Player | https://adrisol-studio.github.io/notion-widgets/widget-music-player.html |
+| 🌧 Matrix Rain | https://adrisol-studio.github.io/notion-widgets/widget-matrix.html |
 
 ---
 
