@@ -82,15 +82,16 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
   - **Adapts to the device** — works in the Notion mobile app: bigger tap targets on touchscreens, history edit / delete buttons always visible on touch, and number fields that don't trigger iPhone zoom
 
 - `widget-pomodoro-scenic.html` — Scenic Pomodoro inspired by studywithme.io: a full-bleed animated background with minimal white UI floating on top (no card or border). Fonts are Fredoka (timer digits) + Quicksand (UI). Settings include:
-  - **Scene** — 6 self-contained backgrounds with no image files (Sunset, Ocean, Forest, Night, Sakura, Noir), built from inline SVG art and CSS gradients; Night adds a generated star field
-  - **Custom background** — paste any image URL and toggle **Use custom image** to use it instead of a built-in scene
-  - **Motion** — Ken Burns (zoom + drift), Pan left → right, Pan right → left, Slow zoom, or Static
+  - **Background** — 19 built-in scenes drawn in inline SVG (no image files), grouped by the motion they use: **Pan** (Ocean, Forest, City Skyline, Autumn Forest, Lavender Field, Countryside, Desert Dunes, Mountain Valley, Winter Village), **Zoom** (Night, Sakura, Snowy Peaks, Dreamy Clouds, Lily Pond, Rainy Lake), **Ken Burns** (Sunset, Misty Lake, Starry Sky) and **Cinemagraph** (Noir, still). Switching backgrounds crossfades smoothly
+  - **Custom background** — paste any image or video link (.mp4 / .webm / .mov…) and toggle **Use custom background**; pick its motion (Ken Burns, Pan, Slow zoom or Static). A video that fails to load falls back to the built-in scene
   - **Overlay darkness** — 0 – 60 % tint over the scene for text legibility
-  - **Zoom** — 70 – 130 % scale of the floating UI
-  - **Durations** — Pomodoro, Short Break, and Long Break lengths (minutes)
+  - **Zoom** — 70 – 130 % scale of the floating UI; it always shrinks to fit the embed
+  - **Durations** — Pomodoro (1 – 180), Short Break and Long Break (1 – 120) lengths in minutes
   - **Sequence** — Pomodoros before a long break (2 – 8) and an **Auto-start next** toggle
   - **Sound** — Bell, Chime, Soft, or None alert (Web Audio, no files), with a play-on-end toggle, volume slider, and Test button
-  - Timestamp-based countdown that stays accurate across tab throttling; session dots under the mode pills fill as focus sessions complete; dark settings modal with General / Timers / Sounds tabs
+  - **Controls** — start / pause, skip to the next session, reset; keyboard shortcuts: Space start / pause · R reset · S skip · 1 / 2 / 3 modes · Esc closes settings
+  - Timestamp-based countdown that stays accurate across tab throttling, and a running timer (with its session dots) carries on after a reload or switching Notion pages; session dots under the mode pills fill as focus sessions complete; dark settings modal with General / Timers / Sounds tabs
+  - **Adapts to the device** — works in the Notion mobile app: bigger tap targets on touchscreens, fields that don't trigger iPhone zoom, and on narrow embeds the settings tabs move to the top so the options get the full width
 
 - `widget-music-player.html` — Embedded Spotify or YouTube player. Settings include:
   - **Theme** — Minimal, Dark, OLED, Mono

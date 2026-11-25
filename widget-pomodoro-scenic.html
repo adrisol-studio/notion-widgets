@@ -27,7 +27,14 @@
       block below and backgrounds/README.md for how to add your own.
 
     PERSISTENCE
-      Settings are saved to localStorage under the key 'pomo-scenic-v1'.
+      Settings are saved to localStorage under the key 'pomo-scenic-v1'; the
+      live timer (mode, end time, session dots) under 'pomo-scenic-timer-v1', so
+      a running timer survives a reload or Notion switching pages.
+
+    DEVICES
+      The UI shrinks to fit any embed; <html data-device/data-touch> is set from
+      the pointer type and embed width; touchscreens get bigger tap targets and
+      16px fields, and narrow embeds show the settings tabs along the top.
     ============================================================================
   -->
 
@@ -638,6 +645,39 @@
     }
     .done:hover { box-shadow: 0 5px 16px rgba(0, 0, 0, .35); transform: translateY(-1px); }
     .pane.haspad { padding-bottom: 62px; }   /* leave room for the sticky footer */
+
+    /* ========================================================================
+       5. DEVICES  (touchscreens + narrow embeds / phones)
+       ======================================================================== */
+    button, .sw, .scenebtn, select { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    .pane { overscroll-behavior: contain; }
+    @media (pointer: coarse) {
+      .pill  { min-height: 36px; padding-left: 2.6vmin; padding-right: 2.6vmin; }
+      .start { min-height: 40px; }
+      .iconbtn { min-width: 42px; min-height: 42px; }
+      .side button { padding: 12px 18px; }
+      .topx { width: 38px; height: 38px; top: 8px; right: 8px; }
+      .num button { width: 38px; height: 40px; }
+      .sw { width: 46px; height: 27px; }
+      .sw::after { width: 22px; height: 22px; }
+      .sw.on::after { transform: translateX(19px); }
+      .rng { height: 6px; }
+      .rng::-webkit-slider-thumb { width: 24px; height: 24px; }
+      .reset, .done { padding: 11px 20px; font-size: 13.5px; }
+      /* 16px stops iOS Safari from zooming the page when a field is focused. */
+      input[type=text], select, .num input { font-size: 16px; }
+    }
+    /* Narrow embeds (phones): settings tabs run along the top instead of a
+       sidebar, so the panes get the full width. */
+    @media (max-width: 460px) {
+      .modal { flex-direction: column; width: 96%; height: 96%; }
+      .side { flex: 0 0 auto; max-width: none; flex-direction: row; align-items: center; padding: 6px 48px 6px 8px; border-right: none; border-bottom: 1px solid #232130; gap: 0; }
+      .side h4 { display: none; }
+      .side button { padding: 10px 12px; }
+      .side button.on::before { left: 10px; right: 10px; top: auto; bottom: 2px; width: auto; height: 3px; border-radius: 3px 3px 0 0; }
+      .pane { padding: 16px 16px; }
+      .field label { font-size: 13px; }
+    }
   </style>
 </head>
 
@@ -893,6 +933,10 @@
     const ghost=scene.cloneNode(true);
     ghost.removeAttribute('id');
     ghost.classList.add('scene-fade');
+    // A clone restarts its motion animation from 0%, so the old scene jumped
+    // (up to ~170px on Pan) as the fade began. Freeze it where it was instead.
+    ghost.style.animation='none';
+    ghost.style.transform=getComputedStyle(scene).transform;
     scene.after(ghost);
     requestAnimationFrame(()=>requestAnimationFrame(()=>{ ghost.style.opacity='0'; }));
     setTimeout(()=>ghost.remove(),700);
@@ -953,7 +997,12 @@
     scene.innerHTML=videoMarkup(mp4,webm,poster);
     const v=scene.querySelector('video');
     if(!v) return;
-    v.addEventListener('error',sceneFallback);   // fires when all sources fail to load
+    // A failed <source> fires 'error' on the SOURCE, not the <video> (whose own
+    // error stays null), so the fallback used to never run and the background
+    // went blank. Fall back once the last source has failed.
+    v.addEventListener('error',sceneFallback);
+    const srcs=v.querySelectorAll('source');
+    if(srcs.length) srcs[srcs.length-1].addEventListener('error',sceneFallback);
     const reduce=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
     if(!reduce){ v.autoplay=true; const p=v.play(); if(p&&p.catch) p.catch(()=>{}); }
     // reduced-motion: leave the video paused on its poster frame
@@ -970,7 +1019,26 @@
   }
 
   function applyTint(){ document.documentElement.style.setProperty('--tint',S.tint/100); }
-  function applyZoom(){ document.documentElement.style.setProperty('--zoom',S.zoom/100); }
+  /* Zoom, capped so the floating UI never grows past the embed (the minimum
+     font sizes can outgrow very small blocks). Layout sizes ignore the
+     transform, so re-running this on resize can't loop. */
+  function applyZoom(){
+    const ui=document.getElementById('uiInner'), de=document.documentElement;
+    const want=S.zoom/100, w=ui.offsetWidth, h=ui.offsetHeight;
+    const fit=(w&&h)?Math.min((de.clientWidth-12)/w,(de.clientHeight-12)/h):want;
+    de.style.setProperty('--zoom',Math.max(.3,Math.min(want,fit)));
+  }
+  /* Device detection. Not user-agent sniffing: whether the main pointer is a
+     finger and how wide the embed is (works in the Notion mobile app). */
+  const _coarse=window.matchMedia('(pointer: coarse)');
+  function detectDevice(){
+    const w=document.documentElement.clientWidth||window.innerWidth;
+    const touch=_coarse.matches||navigator.maxTouchPoints>0&&!window.matchMedia('(pointer: fine)').matches;
+    document.documentElement.dataset.device=w<=420?'phone':(touch||w<=820)?'tablet':'desktop';
+    document.documentElement.dataset.touch=touch?'1':'0';
+  }
+  new ResizeObserver(()=>{ detectDevice(); applyZoom(); }).observe(document.documentElement);
+  _coarse.addEventListener('change',detectDevice);
 
   /* ==========================================================================
      5. TIMER
@@ -982,7 +1050,9 @@
   const startBtn=document.getElementById('startBtn');
 
   function fmt(s){
-    s=Math.max(0,Math.round(s));
+    // Round UP, like any countdown: 24:59.4 left shows 25:00, and 00:00 only
+    // appears when the phase is actually over (rounding showed it 0.5 s early).
+    s=Math.max(0,Math.ceil(s-0.001));
     return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
   }
   // The interval ticks 4x/sec for prompt completion, but MM:SS only changes once
@@ -1003,6 +1073,7 @@
     renderTime();
     updateStart();
     if(autostart) startTimer();
+    saveTimer();
   }
   function updateStart(){ startBtn.textContent=running?'pause':'start'; }
   function clearLoop(){ if(loopId){ clearInterval(loopId); loopId=null; } }
@@ -1012,11 +1083,14 @@
     running=true;
     endTime=Date.now()+remaining*1000;
     updateStart();
-    loopId=setInterval(()=>{
-      remaining=(endTime-Date.now())/1000;
-      if(remaining<=0){ remaining=0; renderTime(); complete(); }
-      else renderTime();
-    },250);
+    loopId=setInterval(tick,250);
+    saveTimer();
+  }
+  function tick(){
+    if(!running) return;
+    remaining=(endTime-Date.now())/1000;
+    if(remaining<=0){ remaining=0; renderTime(); complete(); }
+    else renderTime();
   }
   function pauseTimer(){
     if(!running) return;
@@ -1025,6 +1099,7 @@
     clearLoop();
     renderTime();
     updateStart();
+    saveTimer();
   }
   function toggleTimer(){ running?pauseTimer():startTimer(); }
   function resetTimer(){
@@ -1033,6 +1108,7 @@
     remaining=durOf(mode);
     renderTime();
     updateStart();
+    saveTimer();
   }
 
   /* Phase finished: chime, flash, then advance the focus→break→focus sequence. */
@@ -1050,6 +1126,7 @@
       setMode('focus',S.auto);
     }
     renderDots();
+    saveTimer();
   }
 
   /* Brief fade on the timer when a phase completes. */
@@ -1074,7 +1151,36 @@
       setMode('focus',false);
     }
     renderDots();
+    saveTimer();
   }
+
+  /* Live timer persistence. Notion reloads an embed whenever you switch pages,
+     which used to reset a running timer and its session dots. */
+  const TIMER_KEY='pomo-scenic-timer-v1';
+  function saveTimer(){
+    try{ localStorage.setItem(TIMER_KEY,JSON.stringify({mode,running,endTime,remaining,sessionsDone})); }catch(e){}
+  }
+  /* Called once at init. A phase that ended while the widget was closed is
+     counted and the sequence advanced (paused, no sound). */
+  function restoreTimer(){
+    let t=null;
+    try{ t=JSON.parse(localStorage.getItem(TIMER_KEY)||'null'); }catch(e){}
+    if(!t||!['focus','short','long'].includes(t.mode)) return false;
+    sessionsDone=Math.max(0,Math.min(S.sess,t.sessionsDone|0));
+    setMode(t.mode,false);
+    if(t.running){
+      const left=(t.endTime-Date.now())/1000;
+      if(left>0){ remaining=left; renderTime(); startTimer(); }
+      else skipPhase();
+    }else if(t.remaining>0&&t.remaining<=durOf(t.mode)){
+      remaining=t.remaining; renderTime(); saveTimer();
+    }
+    renderDots();
+    return true;
+  }
+  window.addEventListener('pagehide',saveTimer);
+  // Background tabs run timers late; catch up (and finish a due phase) on return.
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) tick(); });
 
   /* Session dots: one per pomodoro in the cycle, filled as they complete. */
   const dotsEl=document.getElementById('dots');
@@ -1267,7 +1373,7 @@
   num('customUrl').addEventListener('input',e=>{ S.custom=e.target.value.trim(); save(); if(S.useCustom) applyScene(); });
   document.getElementById('swCustom').addEventListener('click',()=>{
     S.useCustom=!S.useCustom;
-    if(S.useCustom&&!S.custom) S.useCustom=false;   // can't enable without a URL
+    if(S.useCustom&&!S.custom){ S.useCustom=false; num('customUrl').focus(); }   // can't enable without a URL: point at the field
     save(); applyScene(true); syncBgSel(); updateCustomUI();
   });
   document.getElementById('motionSel').addEventListener('change',e=>{ S.motion=e.target.value; save(); if(S.useCustom) applyScene(true); });
@@ -1280,6 +1386,7 @@
   const INMAP={focus:'inFocus',short:'inShort',long:'inLong',sess:'inSess'};
   function setDur(k,v){
     const r=RANGE[k];
+    if(!isFinite(v)||String(num(INMAP[k]).value).trim()===''){ num(INMAP[k]).value=S[k]; return; }   // junk input: keep the old value
     v=clamp(v|0,r[0],r[1]);
     S[k]=v;
     num(INMAP[k]).value=v;
@@ -1291,7 +1398,7 @@
   document.querySelectorAll('.num').forEach(box=>{
     const k=box.dataset.k;
     box.querySelectorAll('button').forEach(btn=>
-      btn.addEventListener('click',()=>setDur(k,(+num(INMAP[k]).value)+(+btn.dataset.d))));
+      btn.addEventListener('click',()=>setDur(k,(+S[k])+(+btn.dataset.d))));
     num(INMAP[k]).addEventListener('change',e=>setDur(k,+e.target.value));
   });
   document.getElementById('swAuto').addEventListener('click',e=>{ S.auto=!S.auto; e.currentTarget.classList.toggle('on',S.auto); save(); });
@@ -1329,6 +1436,7 @@
     const t=e.target;
     if(t&&(t.tagName==='INPUT'||t.tagName==='SELECT'||t.tagName==='TEXTAREA')) return;
     if(e.key==='Escape'){ closeSettings(); return; }
+    if(e.ctrlKey||e.metaKey||e.altKey) return;      // Ctrl/Cmd+S (save), Ctrl+R… must not skip/reset
     if(modal.classList.contains('open')) return;
     if(e.code==='Space'){
       if(t&&t.closest&&t.closest('button')) return;  // let a focused button handle Space itself
@@ -1346,12 +1454,13 @@
   /* ==========================================================================
      11. INIT
      ========================================================================== */
+  detectDevice();
   load();
   applyScene();
   applyTint();
   applyZoom();
   renderDots();
-  setMode('focus',false);
+  if(!restoreTimer()) setMode('focus',false);   // restore reads the saved timer before anything re-saves it
   </script>
 </body>
 </html>
