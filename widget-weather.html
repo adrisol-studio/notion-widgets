@@ -446,7 +446,9 @@
         S={...DEF,...p};
         // One-time migration: saves from before Auto existed didn't have this
         // flag, so force Auto to be the real default even for a returning save.
-        if(!p._themeMig){ S.theme='auto'; S._lastEffective=null; }
+        // Remember which theme the old colours were made for, so init re-snaps
+        // them if the system theme differs (else dark colours under light Auto).
+        if(!p._themeMig){ S._lastEffective=(p.theme==='dark'||p.theme==='light')?p.theme:null; S.theme='auto'; }
         S._themeMig=1;
       }
     }catch(e){}
