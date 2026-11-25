@@ -16,6 +16,11 @@
     • Session history is persisted to localStorage ('pomo-hist-v2'). Settings
       are persisted to 'pomo-w1'. Timer state is saved on tab hide/unload and
       restored (with elapsed time accounted for) on reload.
+    • The countdown is timestamp-based (end time / overtime start), so it stays
+      exact in background tabs, where browsers slow timers down.
+    • Auto Start: a finished phase records itself and the next one starts.
+    • Adapts to the device: shrinks to fit any embed, <html data-device/
+      data-touch>, bigger tap targets on touch, history buttons always visible.
 
     HOW THE RING WORKS
       Smooth ring: one SVG <circle> whose stroke-dashoffset is tweened.
@@ -31,7 +36,7 @@
 
     SECTIONS
       <style>  variables, card, ring, mode tabs, settings/history panels,
-               all settings controls.
+               all settings controls, touchscreen sizes.
       <body>   the card (body, ring, modes, panels).
       <script> defaults/palettes · state · ring · persistence · history ·
                rendering · sound · settings panel · main events · timer state
@@ -198,6 +203,7 @@
     .h-trash { padding: 3px 5px; background: none; border: none; color: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: color .15s, background .15s; flex-shrink: 0; border-radius: 4px; }
     .h-grp-hd:hover .h-trash, .h-day-hd:hover .h-trash, .h-sess:hover .h-trash { color: var(--text-faint); }
     .h-trash:hover { color: #ef4444 !important; background: rgba(239,68,68,.1); }
+    .h-trash.armed { color: #ef4444 !important; background: rgba(239,68,68,.16); }   /* month/day: tap again to delete */
 
     /* Empty history state */
     .h-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; gap: 6px; text-align: center; padding: 20px; }
@@ -276,6 +282,37 @@
     .sw-cu::before { content: ''; position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.5) 0%, rgba(255,255,255,.1) 40%, transparent 70%); pointer-events: none; z-index: 1; }
     .sw-cu.on { box-shadow: 0 0 0 2.5px rgba(128,128,128,.7), inset 0 0 4px rgba(0,0,0,.15) !important; }
     .sw-cu.on::after { display: none; }
+
+    /* ===== Touchscreens (phones, tablets, Notion mobile app) ===== */
+    button, .mode, .sw, .tg-b, .tog-sw, .h-month-tog, .h-day-tog { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    .p-body, .h-body { overscroll-behavior: contain; }
+    @media (pointer: coarse) {
+      .ic-btn, .dots-btn { height: 44px; min-width: 44px; }
+      .ic-btn { width: 44px; }
+      .c-btn { width: 48px; height: 48px; }
+      .mode { padding: 11px 4px; font-size: 12px; }
+      .tg-b { padding: 11px 6px; font-size: 12px; }
+      .sw { width: 32px; height: 32px; }
+      .num-arr { width: 34px; height: 34px; font-size: 17px; }
+      .num-r { width: 132px; }
+      /* 16px stops iOS Safari from zooming the page when a field is focused. */
+      .num-in { width: 38px; font-size: 16px; }
+      .cpk-hex, .h-edit-in { font-size: 16px; }
+      .cpk-hex { height: 34px; }
+      .h-edit-in { width: 52px; }
+      .tog-sw { width: 44px; height: 26px; }
+      .tog-track { border-radius: 13px; }
+      .tog-track::after { width: 22px; height: 22px; }
+      .tog-sw input:checked + .tog-track::after { transform: translateX(18px); }
+      .sl { height: 6px; }
+      .sl::-webkit-slider-thumb { width: 24px; height: 24px; }
+      .rst { padding: 12px; font-size: 12px; }
+      /* No hover on touch: keep the history edit / delete buttons visible. */
+      .h-edit, .h-trash { color: var(--text-faint); padding: 7px 8px; }
+      .h-month-tog, .h-day-tog { padding-top: 8px; padding-bottom: 8px; }
+      .h-sess { padding: 7px 6px; }
+      .h-save-btn, .h-cancel-btn { padding: 6px 10px; font-size: 15px; }
+    }
   </style>
 </head>
 
@@ -350,7 +387,8 @@
   /* ==========================================================================
      1. DEFAULTS, PALETTES & STATE
      ========================================================================== */
-  const DEF={theme:'auto',acc:'#ff5a1f',wbg:'#050505',glow:45,ring:'smooth',focus:25,shortBreak:5,longBreak:15,sess:4,auto:false,snd:true,vol:70,zoom:100,_lastEffective:null};
+  const DEF={theme:'auto',acc:'#ff5a1f',wbg:'#050505',glow:45,ring:'smooth',focus:25,shortBreak:5,longBreak:15,sess:4,auto:false,snd:true,vol:70,zoom:100,_lastEffective:null,
+             _themeMig:1};   // fresh saves are already "post-Auto"; see load()
 
   /* Auto theme (S.theme): resolves 'auto' against the OS/browser colour-scheme
      preference (Notion embeds can't read Notion's own theme directly). Not to
@@ -364,6 +402,10 @@
     if(prev===next) return;
     const valid=WC[next].map(x=>x.c);
     if(!valid.includes(S.wbg)) S.wbg=WC[next][0].c;
+    // The white accent swatch becomes black on the light card (and back), or
+    // the ring and history durations would be invisible.
+    if(next==='light'&&S.acc==='#ffffff') S.acc='#111111';
+    if(next==='dark'&&S.acc==='#111111') S.acc='#ffffff';
   }
 
   /* Curated per-theme background palettes — prevents contrast issues by design. */
@@ -372,11 +414,17 @@
     light:[{c:'#faf7f2',k:'lt'},{c:'#f2ede3',k:'lt'},{c:'#e8edf5',k:'lt'},{c:'#ede9f5',k:'lt'},{c:'#f5ebe8',k:'lt'}]
   };
   const AC=[{c:'#ff5a1f',k:'dk'},{c:'#7c3aed',k:'dk'},{c:'#2563eb',k:'dk'},{c:'#10b981',k:'dk'},{c:'#ef4444',k:'dk'},{c:'#e9c46a',k:'lt'},{c:'#ffffff',k:'dk'}];
+  /* Accent swatches for the current theme: the last one is white on dark, black on light. */
+  function acList(){ return effectiveTheme()==='light'?AC.map(x=>x.c==='#ffffff'?{c:'#111111',k:'dk'}:x):AC; }
 
   let S={...DEF};
   let mode='focus', timeLeft=DEF.focus*60, isRun=false, sessions=0;
-  let iv=null, tickStamp=0, rafId=null;
+  let iv=null, rafId=null;
   let isOvertime=false, overtimeCount=0;
+  /* While running, the clock is the source of truth: endAt = when the phase
+     reaches 0, overStart = when overtime began. timeLeft / overtimeCount are
+     derived from them on every tick, so delayed ticks can't lose time. */
+  let endAt=0, overStart=0;
 
   /* Per-mode timer state so switching modes preserves mid-session progress. */
   const modeState={
@@ -430,7 +478,9 @@
         S={...DEF,...p};
         // One-time migration: saves from before Auto existed didn't have this
         // flag, so force Auto to be the real default even for a returning save.
-        if(!p._themeMig){ S.theme='auto'; S._lastEffective=null; }
+        // Remember which theme the old colours were made for, so boot re-snaps
+        // them if the system theme differs.
+        if(!p._themeMig){ S._lastEffective=(p.theme==='dark'||p.theme==='light')?p.theme:null; S.theme='auto'; }
         S._themeMig=1;
       }
     }catch(e){}
@@ -450,8 +500,32 @@
     c.style.setProperty('--wbg',S.wbg);
     c.style.setProperty('--acc',S.acc);
     document.documentElement.style.background=eff==='dark'?'#191919':'#ffffff';
-    document.getElementById('swWrap').style.transform=`scale(${S.zoom/100})`;
+    fitScale();
   }
+  /* Shrink-to-fit: the zoom slider sets the preferred size, but the 350x390
+     card never grows past the embed (150% zoom in the recommended 420px-wide
+     block used to push the gear off the left edge). */
+  function fitScale(){
+    const de=document.documentElement;                 // its own size: innerWidth can lag a resize
+    const w=de.clientWidth||window.innerWidth, h=de.clientHeight||window.innerHeight, want=S.zoom/100;
+    const fit=(w&&h)?Math.min((w-8)/350,(h-8)/390):want;
+    document.getElementById('swWrap').style.transform=`scale(${Math.max(.2,Math.min(want,fit))})`;
+  }
+  /* Device detection. Not user-agent sniffing: whether the main pointer is a
+     finger and how wide the embed is (works in the Notion mobile app). Exposed as
+     <html data-device="phone|tablet|desktop" data-touch="1|0">; the touch sizes
+     are in the (pointer: coarse) CSS block. */
+  const _coarse=window.matchMedia('(pointer: coarse)');
+  function detectDevice(){
+    const w=document.documentElement.clientWidth||window.innerWidth;
+    const touch=_coarse.matches||navigator.maxTouchPoints>0&&!window.matchMedia('(pointer: fine)').matches;
+    document.documentElement.dataset.device=w<=420?'phone':(touch||w<=820)?'tablet':'desktop';
+    document.documentElement.dataset.touch=touch?'1':'0';
+  }
+  // A ResizeObserver also catches embed resizes that don't fire window 'resize'.
+  window.addEventListener('resize',()=>{ detectDevice(); fitScale(); });
+  new ResizeObserver(()=>{ detectDevice(); fitScale(); }).observe(document.documentElement);
+  _coarse.addEventListener('change',detectDevice);
 
   /* ==========================================================================
      5. RING BUILDING & UPDATING
@@ -593,20 +667,30 @@
     }));
 
     // Trash: delete a whole month, a day, or a single session.
+    // Deleting a whole month or day takes two taps (the bin turns red first),
+    // so a stray tap can't wipe weeks of history.
+    const armed=(btn)=>{
+      if(btn.classList.contains('armed')) return true;
+      el.querySelectorAll('.h-trash.armed').forEach(b=>b.classList.remove('armed'));
+      btn.classList.add('armed'); btn.title='Tap again to delete';
+      setTimeout(()=>btn.classList.remove('armed'),3000);
+      return false;
+    };
     el.querySelectorAll('[data-del-month]').forEach(btn=>btn.addEventListener('click',e=>{
-      e.stopPropagation();
+      e.stopPropagation(); if(!armed(btn)) return;
       const ym=btn.dataset.delMonth, h2=loadHist();
       Object.keys(h2).forEach(k=>{ if(k.startsWith(ym)) delete h2[k]; });
-      saveHist(h2); buildHist();
+      saveHist(h2); buildHist(); renderDots();
     }));
     el.querySelectorAll('[data-del-day]').forEach(btn=>btn.addEventListener('click',e=>{
-      e.stopPropagation(); const h2=loadHist(); delete h2[btn.dataset.delDay]; saveHist(h2); buildHist();
+      e.stopPropagation(); if(!armed(btn)) return;
+      const h2=loadHist(); delete h2[btn.dataset.delDay]; saveHist(h2); buildHist(); renderDots();
     }));
     el.querySelectorAll('[data-del-sess]').forEach(btn=>btn.addEventListener('click',e=>{
       e.stopPropagation();
       const [dk,si]=btn.dataset.delSess.split('|'), h2=loadHist();
       if(h2[dk]){ h2[dk].splice(+si,1); if(!h2[dk].length) delete h2[dk]; }
-      saveHist(h2); buildHist();
+      saveHist(h2); buildHist(); renderDots();
     }));
 
     // Inline session duration editor.
@@ -624,7 +708,7 @@
       const inp=row.querySelector('.h-edit-in');
       inp.focus(); inp.select();
       const confirmEdit=()=>{
-        const v=Math.max(1,parseInt(inp.value)||1);
+        const v=Math.min(480,Math.max(1,parseInt(inp.value)||1));   // 1 min - 8 h, as the field says
         const h2=loadHist();
         if(h2[dk]&&h2[dk][+si]) h2[dk][+si].secs=v*60;
         saveHist(h2); buildHist();
@@ -661,39 +745,72 @@
   function rafLoop(){
     if(!isRun){ rafId=null; return; }
     if(S.ring==='segmented'){
-      const subSec=(Date.now()-tickStamp)/1000;
-      if(isOvertime){ applySegRing(Math.min(1,(overtimeCount+subSec)/Math.max(1,dur()))); }
-      else { updateRing(Math.max(0,timeLeft-subSec)); }
+      const now=Date.now();
+      if(isOvertime){ applySegRing(Math.min(1,(now-overStart)/1000/Math.max(1,dur()))); }
+      else { updateRing(Math.max(0,(endAt-now)/1000)); }
     }
     rafId=requestAnimationFrame(rafLoop);
   }
+  /* Recompute timeLeft / overtimeCount from the clock (no-op while paused). */
+  function syncTime(){
+    if(!isRun) return;
+    const now=Date.now();
+    if(isOvertime) overtimeCount=Math.max(0,Math.floor((now-overStart)/1000));
+    else timeLeft=Math.max(0,Math.ceil((endAt-now)/1000-0.001));
+  }
+  /* Finish the current phase and move on: record a focus session (plus any
+     overtime), pick the next mode, start it if `autoGo`. Shared by the
+     play/stop button in overtime and by Auto Start. */
+  function completePhase(autoGo){
+    syncTime();
+    let next;
+    if(mode==='focus'){
+      const earned=1+Math.floor(overtimeCount/(S.focus*60));
+      recordSession();
+      sessions+=earned;
+      next=sessions%S.sess===0?'longBreak':'shortBreak';
+    }else{
+      if(mode==='longBreak') sessions=0;
+      next='focus';
+    }
+    isOvertime=true;                                   // makes saveModeState() store a fresh phase
+    modeState[next]={timeLeft:null,isOvertime:false,overtimeCount:0};
+    switchMode(next,autoGo);
+  }
   function tick(){
+    const was=isOvertime?'+'+overtimeCount:timeLeft;
+    syncTime();
     if(!isOvertime&&timeLeft<=0){
-      // Phase just completed: enter overtime.
-      isOvertime=true; overtimeCount=0;
-      tickStamp=Date.now();
-      playSound(); syncIcon(); updateUI();
+      playSound();
+      if(S.auto){ completePhase(true); return; }       // Auto Start: straight into the next phase
+      // Phase just completed: enter overtime, counted from the moment it hit 0.
+      isOvertime=true; overStart=endAt; syncTime();
+      syncIcon(); updateUI();
       return;
     }
-    if(isOvertime){ overtimeCount++; tickStamp=Date.now(); updateUI(); return; }
-    timeLeft--; tickStamp=Date.now(); updateUI();
+    if(isOvertime&&S.auto){ completePhase(true); return; }   // e.g. restored into overtime, or Auto turned on mid-overtime
+    if((isOvertime?'+'+overtimeCount:timeLeft)!==was) updateUI();
   }
   function start(){
     if(isRun) return;
-    isRun=true; tickStamp=Date.now();
-    syncIcon(); clearInterval(iv); iv=setInterval(tick,1000);
+    isRun=true;
+    const now=Date.now();
+    if(isOvertime) overStart=now-overtimeCount*1000; else endAt=now+timeLeft*1000;
+    syncIcon(); clearInterval(iv); iv=setInterval(tick,250);   // 4x/s so the display never skips a second
     if(rafId) cancelAnimationFrame(rafId);
     rafId=requestAnimationFrame(rafLoop);
   }
   function pause(){
+    syncTime();
     isRun=false; syncIcon(); clearInterval(iv); iv=null;
     if(rafId){ cancelAnimationFrame(rafId); rafId=null; }
   }
   function reset(){
-    // Record partial session before resetting.
-    if(mode==='focus'&&!isOvertime){
-      const elapsed=S.focus*60-timeLeft;
-      addSessionRecord(elapsed);
+    syncTime();
+    // Record the session before resetting: a partial focus, or a finished one
+    // (overtime) - which used to be thrown away.
+    if(mode==='focus'){
+      addSessionRecord(isOvertime?S.focus*60+overtimeCount:S.focus*60-timeLeft);
     }
     pause();
     isOvertime=false; overtimeCount=0;
@@ -703,6 +820,7 @@
   }
   function switchMode(m,auto=false){
     if(m===mode&&!auto) return;
+    syncTime();
     saveModeState();
     mode=m;
     loadModeState(m);
@@ -716,7 +834,14 @@
   /* ==========================================================================
      10. SOUND (Web Audio API — synthesised, no files)
      ========================================================================== */
-  function mkCtx(){ return new (window.AudioContext||window.webkitAudioContext)(); }
+  /* One shared AudioContext (a new one per sound leaked contexts, and browsers
+     cap how many a page may open). Resumed in case it was suspended. */
+  let _actx=null;
+  function mkCtx(){
+    if(!_actx) _actx=new (window.AudioContext||window.webkitAudioContext)();
+    if(_actx.state==='suspended') _actx.resume();
+    return _actx;
+  }
   function tone(ctx,freq,type,vol,start,len,freqEnd){
     const osc=ctx.createOscillator(), g=ctx.createGain();
     osc.connect(g); g.connect(ctx.destination);
@@ -773,7 +898,7 @@
   function cuSwHtml(g,cur,presets){ const isCustom=!presets.some(x=>x.c===cur); return `<div class="sw sw-cu${isCustom?' on':''}" data-g="${g}"></div>`; }
   function syncCuSwatch(g){
     const cur=g==='wc'?S.wbg:S.acc;
-    const presets=g==='wc'?WC[effectiveTheme()]:AC;
+    const presets=g==='wc'?WC[effectiveTheme()]:acList();
     const isCustom=!presets.some(x=>x.c===cur);
     const sw=document.querySelector(`.sw-cu[data-g="${g}"]`); if(!sw) return;
     sw.classList.toggle('on',isCustom);
@@ -834,7 +959,7 @@
       </div>
       <div>
         <div class="s-lbl">Accent Color</div>
-        <div class="sw-row">${swHtml(AC,'ac',S.acc)}${cuSwHtml('ac',S.acc,AC)}</div>
+        <div class="sw-row">${swHtml(acList(),'ac',S.acc)}${cuSwHtml('ac',S.acc,acList())}</div>
         ${cpkHtml('cpk-ac')}
       </div>
       <div class="sl-wrap">
@@ -932,7 +1057,7 @@
 
     // Number inputs (direct edit).
     document.querySelectorAll('.num-in').forEach(inp=>inp.addEventListener('change',()=>{
-      const k=inp.dataset.nk, v=Math.max(1,parseInt(inp.value)||1);
+      const k=inp.dataset.nk, v=Math.min(k==='sess'?12:180,Math.max(1,parseInt(inp.value)||1));
       S[k]=v; inp.value=v;
       if(k===mode&&!isRun){ timeLeft=v*60; updateUI(); }
       save(); renderDots();
@@ -964,7 +1089,7 @@
 
     // Zoom slider.
     const zmSl=document.getElementById('zmSl');
-    if(zmSl) zmSl.addEventListener('input',()=>{ S.zoom=+zmSl.value; document.getElementById('zmV').textContent=S.zoom+'%'; save(); document.getElementById('swWrap').style.transform=`scale(${S.zoom/100})`; });
+    if(zmSl) zmSl.addEventListener('input',()=>{ S.zoom=+zmSl.value; document.getElementById('zmV').textContent=S.zoom+'%'; save(); fitScale(); });
 
     // Reset to defaults.
     const dfBtn=document.getElementById('dfBtn');
@@ -995,16 +1120,7 @@
     if(isOvertime&&isRun){
       // Complete an overtime phase: record it and advance to the next mode.
       playClick('pause');
-      if(mode==='focus'){
-        const earned=1+Math.floor(overtimeCount/(S.focus*60));
-        recordSession();
-        sessions+=earned;
-        const nextMode=sessions%S.sess===0?'longBreak':'shortBreak';
-        switchMode(nextMode,false);
-      }else{
-        if(mode==='longBreak') sessions=0;
-        switchMode('focus',false);
-      }
+      completePhase(false);
     }else if(isRun){
       playClick('pause'); pause();
     }else{
@@ -1023,6 +1139,7 @@
   const TIMER_KEY='pomo-timer-v1';
 
   function saveState(){
+    syncTime();
     try{ localStorage.setItem(TIMER_KEY,JSON.stringify({mode,timeLeft,isRun,isOvertime,overtimeCount,sessions,ts:Date.now()})); }catch(e){}
   }
   function restoreState(){
@@ -1062,12 +1179,14 @@
   }
 
   // Save on visibility change (tab switch) and page unload.
-  document.addEventListener('visibilitychange',()=>{ if(document.hidden) saveState(); });
+  // Coming back to the tab catches the display up at once (the clock itself never drifted).
+  document.addEventListener('visibilitychange',()=>{ if(document.hidden) saveState(); else if(isRun) tick(); });
   window.addEventListener('pagehide',saveState);
 
   /* ==========================================================================
      15. BOOT
      ========================================================================== */
+  detectDevice();
   load();
   // Bootstrap Auto's derived colour: DEF's wbg assumes a dark baseline, so
   // only snap if the resolved theme differs; explicit Light/Dark users never

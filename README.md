@@ -67,17 +67,19 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
   - Responsive layout for narrow embeds; gear icon auto-adapts to tile brightness
 
 - `widget-pomodoro.html` — Pomodoro timer with focus/break cycles and session tracking. Settings include:
-  - **Theme** — Dark or Light
-  - **Widget Color** — custom background colour picker
-  - **Accent Color** — custom accent colour picker
+  - **Theme** — Auto (follows your system), Dark or Light
+  - **Widget Color** — per-theme background swatches plus a custom colour picker
+  - **Accent Color** — preset swatches plus a custom colour picker (the white swatch turns black in light theme so the ring stays visible)
   - **Glow** — adjustable ring glow intensity slider
-  - **Ring Style** — Smooth or Sharp progress ring
-  - **Durations** — Focus, Short Break, and Long Break lengths (minutes)
-  - **Sessions** — number of sessions per cycle (default 4)
-  - **Auto-advance** — automatically start the next session/break
+  - **Ring Style** — Smooth or Segmented progress ring
+  - **Durations** — Focus, Short Break, and Long Break lengths (1 – 180 minutes)
+  - **Sessions** — number of sessions per cycle (default 4, up to 12)
+  - **Auto Start** — when a phase ends it is recorded and the next session/break starts by itself; with it off, the timer counts overtime (+MM:SS) until you press stop
   - **Sound** — toggle notification sound on/off, with volume slider
-  - **Zoom** — 50 – 150 % scale
-  - Session history panel with editable past entries; dots indicator shows cycle progress
+  - **Zoom** — 50 – 150 % scale; the card always shrinks to fit its embed
+  - Accurate in background tabs — the countdown follows the real clock, and a running timer carries on after a reload
+  - Session history panel grouped by month and day, with editable entries (1 – 480 min); deleting a whole month or day takes two taps; dots indicator shows cycle progress
+  - **Adapts to the device** — works in the Notion mobile app: bigger tap targets on touchscreens, history edit / delete buttons always visible on touch, and number fields that don't trigger iPhone zoom
 
 - `widget-pomodoro-scenic.html` — Scenic Pomodoro inspired by studywithme.io: a full-bleed animated background with minimal white UI floating on top (no card or border). Fonts are Fredoka (timer digits) + Quicksand (UI). Settings include:
   - **Scene** — 6 self-contained backgrounds with no image files (Sunset, Ocean, Forest, Night, Sakura, Noir), built from inline SVG art and CSS gradients; Night adds a generated star field
