@@ -23,7 +23,7 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
 
 | Widget | Mode | Width | Height |
 |--------|------|-------|--------|
-| Weather | Full (hourly + 7-day) | 520px | 300px |
+| Weather | Full (hourly + 7-day) | 520px | 350px |
 | Weather | Compact (current only) | 340px | 190px |
 | Flip Clock | Standard (4-tile) | 500px | 220px |
 | Flip Clock | Compact (2-tile) | 320px | 200px |
@@ -40,14 +40,15 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
 ## 📁 Files
 
 - `widget-weather.html` — Live weather widget powered by Open-Meteo (free, no API key, CORS-enabled). Settings include:
-  - **Location** — city search plus a multi-city switcher: save up to 5 cities and switch instantly via tabs on the widget; each city's data is cached so switching back is instant, with a silent background refresh when stale
+  - **Location** — city search plus a multi-city switcher: save up to 5 cities and switch instantly via tabs on the widget; each city's data is cached so switching back is instant, with a silent background refresh when stale; if a refresh fails (e.g. Wi-Fi drops) the last weather stays on screen and it refreshes again once you're back online
   - **Units** — °C or °F
   - **Forecast Days** — 3, 5, or 7 day outlook
   - **Layout** — Full (current conditions + scrollable hourly strip + daily forecast) or Compact (current conditions only)
   - **Day Labels** — Short (Mon) or Full (Monday)
   - **Theme** — Light or Dark, with per-theme background and text colour palettes plus full HSV custom colour pickers
   - **Display toggles** — Ambient gradient background, Hourly strip, Air quality (AQI), Feels-like temp, Rain chance, Forecast rain %, Dates, Condition text, Animated icons, Greyscale icons
-  - **Zoom** — 50 – 160 % scale
+  - **Zoom** — 50 – 160 % scale; the widget always shrinks to fit its embed, so nothing (including the gear) is ever cut off
+  - **Adapts to the device** — works in the Notion mobile app: bigger tap targets on touchscreens, slightly narrower tiles on phones so 5–7 days fit, **swipe left / right to switch saved cities** (also in Compact), and a settings popup that fits small screens
   - **Multi-model consensus** — blends five forecast models (ECMWF, GFS, ICON, GEM, JMA) and takes the median of every value, so one outlier model can't show a false storm
   - **Smart rain detection** — weather codes are reconciled against actual precipitation amount (mm) and cloud cover, so dramatic icons and the rain chip only appear when rain is genuinely forecast
   - Custom inline-SVG weather icons (clear/cloud/fog/drizzle/rain/snow/thunder, day & night variants) with optional CSS animation; location-local clock; "Weather by Open-Meteo" attribution (CC BY 4.0)
