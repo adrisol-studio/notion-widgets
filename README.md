@@ -15,6 +15,7 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
 | 🌄 Scenic Pomodoro | https://adrisol-studio.github.io/notion-widgets/widget-pomodoro-scenic.html |
 | 🎵 Music Player | https://adrisol-studio.github.io/notion-widgets/widget-music-player.html |
 | 🌧 Matrix Rain | https://adrisol-studio.github.io/notion-widgets/widget-matrix.html |
+| 🗓 Timetable | https://adrisol-studio.github.io/notion-widgets/widget-timetable.html |
 
 ---
 
@@ -31,6 +32,8 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
 | Music Player | Full (Spotify / YouTube) | 420px | 460px |
 | Music Player | Compact (Spotify only) | 420px | 140px |
 | Matrix Rain | — | any | any |
+| Timetable | Full (Today / Week) | 520px | 600px |
+| Timetable | Narrow | 340px | 520px |
 
 ---
 
@@ -103,3 +106,17 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
   - **Trail Length** — 2 – 14 (step 1)
   - Settings panel opens in the top-left corner with no overlay so live changes are visible behind it
   - Fills any embed size; settings accessible via gear icon
+
+- `widget-timetable.html` — Class timetable in the Dark XP look (Dark, Light or Auto). Features:
+  - **AI import** — the widget provides a ready-made prompt; paste it into Claude, ChatGPT or Gemini with a photo of your timetable, paste the JSON reply back, preview it (bad rows are listed and skipped), then **Replace all** or **Add to current**. Holiday dates shown on the timetable come through too
+  - **Today view** — a Now / Next card with a live XP-style progress bar and time left, free time between classes, "First up", "Done for today" and the next class on another day; step through other days with the arrows
+  - **Week view** — colour-coded grid with a current-time line, side-by-side overlapping classes, weekends shown automatically only when needed
+  - **Holidays & exam weeks** — date ranges; holidays clear the timetable for those days, exam weeks show a banner; next holiday countdown in the footer
+  - **Per-class extras** — sticker (40 built in), colour, note, room, teacher, type; **cancel a class for one day** without editing the timetable
+  - **Week A / Week B** for alternating timetables (switched on automatically when the AI import finds one)
+  - **Attendance link** — paste your Notion "Today's Attendance" page link and a **Log attendance** button appears during class
+  - **Portable link** — packs the whole timetable into the embed link (`#d=…`), so the same timetable shows on every device; plus copy-backup / restore
+  - **Adapts to the device** — detects touch vs mouse and the embed's own width (phone / tablet / desktop), so it also works in the Notion mobile app: bigger tap targets on touch, swipe left / right between days, long course names wrap on phones, the week grid scrolls sideways on phones (opening on today, with hours and day names pinned), and form fields don't trigger iPhone zoom
+  - **Samples** — try it before importing: a hypothetical **B.Tech CSE** 3rd-semester timetable (Mon–Sat, labs, tutorials, mid-sem exams + Diwali break) or a **General college** timetable
+  - Accent colour, 12 / 24 h, week starts Mon / Sun, zoom 70 – 140 %; `?instance=name` keeps several copies on one page separate
+

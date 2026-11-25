@@ -1,0 +1,1473 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Timetable</title>
+
+  <!--
+    ============================================================================
+    TIMETABLE  —  self-contained class timetable widget for Notion (/embed)
+    ============================================================================
+    • Dark XP look (matches the Dark XP Student Planner), with Light + Auto.
+    • Today view: a Now / Next hero card (live progress bar, minutes left,
+      free-time gaps), then the day's classes. Week view: a colour-coded grid.
+    • AI import: the widget gives you a prompt; paste it + a photo of your
+      timetable into any AI chat, paste the JSON reply back, preview, import.
+    • Holidays & exam weeks (date ranges), per-class stickers and notes,
+      cancel a class for one day, alternating Week A / Week B timetables,
+      optional "Log attendance" link to a Notion page.
+    • Data is saved to localStorage ('tt1_<instance>'). Because a Notion embed's
+      storage is per device/browser, the widget can also pack the whole
+      timetable into a portable embed link (#d=...) that works everywhere.
+
+    DATA MODEL
+      D.classes  [{id,title,code,day(0=Mon..6=Sun),start'HH:MM',end'HH:MM',
+                   room,teacher,type,color,sticker,note,week(''|'A'|'B')}]
+      D.holidays [{id,name,start'YYYY-MM-DD',end'YYYY-MM-DD',kind('holiday'|'exam')}]
+      D.cancels  [{date'YYYY-MM-DD',id}]   one class cancelled on one date
+
+    SECTIONS
+      <style>   tokens · header · hero · day list · week grid · panels · forms
+      <body>    header, main view, footer, slide-over panels
+      <script>  constants/state · date helpers · schedule logic · rendering
+                (hero, day, week) · editor · AI import · holidays · settings
+                · portable link · ticker/init
+    ============================================================================
+  -->
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Chakra+Petch:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    /* ===== Tokens (theme sets surfaces; --acc is the user's accent) ===== */
+    :root { --acc: #a78bfa; --gold: #f5c451; --red: #f87171; --green: #34d399; }
+    [data-theme="dark"] {
+      --bg: #0d0d10; --card: #141418; --card2: #1b1b21; --card3: #25252d;
+      --line: rgba(255,255,255,.07); --line2: rgba(255,255,255,.13);
+      --text: #eeedf5; --sub: rgba(238,237,245,.64); --faint: rgba(238,237,245,.36);
+      --shadow: 0 14px 44px rgba(0,0,0,.55);
+    }
+    [data-theme="light"] {
+      --bg: #f5f4f9; --card: #ffffff; --card2: #f0eef7; --card3: #e5e2ef;
+      --line: rgba(24,16,48,.08); --line2: rgba(24,16,48,.15);
+      --text: #1a1730; --sub: rgba(26,23,48,.66); --faint: rgba(26,23,48,.42);
+      --shadow: 0 14px 44px rgba(40,20,80,.16);
+      --gold: #a86b00; --red: #d03a3a; --green: #128a5c;   /* darker so they read on white */
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+    button { font-family: inherit; color: inherit; }
+    /* container-type lets the narrow-layout rules below react to the widget's
+       own (zoomed) width rather than the window's. */
+    .app { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; overflow: hidden; container-type: inline-size; container-name: app; }
+
+    /* ===== Header =====
+       Buttons sit right after the title (left side) so Notion's own hover
+       controls in the embed's top-right corner never cover them. */
+    .hd { display: flex; align-items: center; gap: 10px; padding: 12px 14px 10px; flex-shrink: 0; min-width: 0; }
+    .hd-l { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }   /* never shrinks: the date gives way instead */
+    .logo { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; background: linear-gradient(135deg, var(--acc), color-mix(in srgb, var(--acc) 40%, #000)); box-shadow: 0 0 14px color-mix(in srgb, var(--acc) 45%, transparent); flex-shrink: 0; }
+    .logo svg { width: 13px; height: 13px; fill: #fff; }
+    .hd-title { font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 14px; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; }
+    .ab-badge { font-family: 'Chakra Petch', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: .08em; padding: 2px 7px; border-radius: 5px; background: color-mix(in srgb, var(--gold) 18%, transparent); color: var(--gold); white-space: nowrap; }
+    .seg { display: flex; background: var(--card2); border: 1px solid var(--line); border-radius: 9px; padding: 2px; flex-shrink: 0; }
+    .seg button { border: none; background: none; font-size: 11.5px; font-weight: 600; padding: 5px 10px; border-radius: 7px; cursor: pointer; color: var(--sub); transition: background .15s, color .15s; }
+    .seg button.on { background: var(--card3); color: var(--text); }
+    .ib { width: 30px; height: 30px; border-radius: 8px; border: none; background: none; cursor: pointer; display: grid; place-items: center; color: var(--sub); flex-shrink: 0; transition: background .15s, color .15s; }
+    .ib:hover { background: var(--card2); color: var(--text); }
+    .ib svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .hd-date { flex: 1 1 auto; text-align: right; font-size: 11.5px; font-weight: 600; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+    /* ===== Main area ===== */
+    .main { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 14px 12px; scrollbar-width: thin; scrollbar-color: var(--card3) transparent; }
+    .main::-webkit-scrollbar { width: 5px; } .main::-webkit-scrollbar-thumb { background: var(--card3); border-radius: 5px; }
+
+    /* ===== Hero (Now / Next) ===== */
+    .hero { position: relative; border-radius: 16px; padding: 14px 16px 15px; background:
+        radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--acc) 22%, transparent), transparent 60%), var(--card);
+      border: 1px solid color-mix(in srgb, var(--acc) 30%, var(--line)); overflow: hidden; }
+    .hero.calm { background: var(--card); border-color: var(--line); }
+    .h-lbl { font-family: 'Chakra Petch', sans-serif; font-size: 10.5px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: var(--acc); display: flex; align-items: center; gap: 6px; }
+    .h-lbl .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 0 var(--acc); animation: pulse 1.8s infinite; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--acc) 70%, transparent); } 70% { box-shadow: 0 0 0 8px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+    .h-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: 6px; }
+    .h-title { font-size: 19px; font-weight: 700; line-height: 1.2; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .h-big { font-family: 'Anton', sans-serif; font-size: 30px; line-height: 1; letter-spacing: .01em; white-space: nowrap; }
+    .h-big small { font-family: 'Chakra Petch', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: var(--sub); margin-left: 4px; }
+    .h-meta { font-size: 12px; color: var(--sub); margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+    .h-next { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line2); font-size: 12px; color: var(--sub); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .h-next b { color: var(--text); font-weight: 600; }
+    /* XP-style progress bar: segmented track, glowing fill. */
+    .xp { position: relative; height: 10px; border-radius: 6px; margin-top: 11px; background: var(--card3); overflow: hidden; }
+    .xp-fill { position: absolute; inset: 0 auto 0 0; border-radius: 6px; background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 70%, #fff 0%), var(--acc)); box-shadow: 0 0 12px color-mix(in srgb, var(--acc) 70%, transparent); transition: width .6s ease; }
+    .xp::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 2px), var(--card) calc(10% - 2px) 10%); pointer-events: none; opacity: .9; }
+    .log-btn { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; padding: 5px 10px; border-radius: 8px; background: color-mix(in srgb, var(--green) 16%, transparent); color: var(--green); text-decoration: none; margin-left: auto; white-space: nowrap; }
+    .log-btn:hover { background: color-mix(in srgb, var(--green) 26%, transparent); }
+
+    .banner { margin-top: 10px; border-radius: 10px; padding: 8px 12px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .banner.exam { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); }
+    .banner.hol { background: color-mix(in srgb, var(--gold) 14%, transparent); color: var(--gold); }
+
+    /* ===== Day list ===== */
+    .dnav { display: flex; align-items: center; gap: 6px; margin: 14px 0 8px; }
+    .dnav-t { font-family: 'Chakra Petch', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--sub); flex: 1; }
+    .dnav .ib { width: 26px; height: 26px; }
+    .today-btn { font-size: 11px; font-weight: 600; border: 1px solid var(--line2); background: none; border-radius: 7px; padding: 3px 8px; cursor: pointer; color: var(--sub); }
+    .today-btn:hover { color: var(--text); }
+    .list { display: flex; flex-direction: column; gap: 6px; }
+    .it { position: relative; display: grid; grid-template-columns: 62px 1fr auto; gap: 10px; align-items: center; padding: 9px 10px 9px 12px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); cursor: pointer; transition: border-color .15s, transform .15s, opacity .2s; }
+    .it:hover { border-color: var(--line2); }
+    .it::before { content: ''; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--c); }
+    .it.past { opacity: .45; }
+    .it.now { border-color: color-mix(in srgb, var(--c) 55%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 30%, transparent), 0 0 22px color-mix(in srgb, var(--c) 18%, transparent); }
+    .it.cxl { opacity: .55; }
+    .it.cxl .it-title { text-decoration: line-through; }
+    .it-time { font-size: 11.5px; font-weight: 700; line-height: 1.35; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .it-time span { display: block; color: var(--faint); font-weight: 600; }
+    .it-main { min-width: 0; }
+    .it-title { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .it-title .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .stk { font-size: 15px; line-height: 1; flex-shrink: 0; }
+    .chips { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 4px; }
+    .chip { font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 5px; background: var(--card2); color: var(--sub); white-space: nowrap; }
+    .chip.c { background: color-mix(in srgb, var(--c) 16%, transparent); color: var(--c); }
+    .chip.cx { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); }
+    .note { font-size: 11.5px; color: var(--sub); margin-top: 5px; font-style: italic; }
+    .it-act { display: flex; gap: 2px; opacity: 0; transition: opacity .15s; }
+    .it:hover .it-act, .it:focus-within .it-act { opacity: 1; }
+    @media (hover: none) { .it-act { opacity: .8; } }
+    .it-act .ib { width: 26px; height: 26px; }
+    .it-act .ib svg { width: 14px; height: 14px; }
+    .gap { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; color: var(--faint); padding: 0 4px 0 74px; }
+    .gap::after { content: ''; flex: 1; height: 1px; background: repeating-linear-gradient(90deg, var(--line2) 0 4px, transparent 4px 8px); }
+
+    /* ===== Empty states ===== */
+    .empty { text-align: center; padding: 28px 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .empty-ic { font-size: 34px; }
+    .empty h3 { font-size: 15px; font-weight: 700; }
+    .empty p { font-size: 12.5px; color: var(--sub); max-width: 290px; line-height: 1.5; }
+    .btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    .btn { border: none; border-radius: 9px; padding: 8px 14px; font-size: 12px; font-weight: 600; cursor: pointer; background: var(--card3); color: var(--text); transition: filter .15s, background .15s; }
+    .btn:hover { filter: brightness(1.12); }
+    .btn.pri { background: var(--acc); color: #fff; box-shadow: 0 4px 16px color-mix(in srgb, var(--acc) 35%, transparent); }
+    .btn.dgr { background: color-mix(in srgb, var(--red) 18%, transparent); color: var(--red); }
+    .btn.sm { padding: 6px 10px; font-size: 11.5px; }
+    .btn:disabled { opacity: .45; cursor: default; filter: none; }
+    .link { background: none; border: none; color: var(--sub); font-size: 11.5px; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+
+    /* ===== Week grid ===== */
+    .wk { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+    .wk-nav { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-shrink: 0; }
+    /* One scroll box holds the header row and the grid, so on phones (where
+       columns get a minimum width) both scroll sideways together; the day
+       header sticks to the top and the hour gutter sticks to the left. */
+    .wk { --colmin: 0px; }
+    .wk-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--card3) transparent; }
+    .wk-grid { display: flex; flex-direction: column; min-height: 100%; min-width: min-content; }
+    .wk-head, .wk-row { display: grid; grid-template-columns: 38px repeat(var(--n), minmax(var(--colmin), 1fr)); gap: 4px; }
+    .wk-head { position: sticky; top: 0; z-index: 5; background: var(--bg); padding-bottom: 4px; }
+    .wk-head > div:first-child { position: sticky; left: 0; background: var(--bg); z-index: 1; }
+    .wk-dh { text-align: center; padding: 5px 2px; border-radius: 8px; font-size: 11px; font-weight: 700; color: var(--sub); }
+    .wk-dh b { display: block; font-family: 'Chakra Petch', sans-serif; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+    .wk-dh.today { background: color-mix(in srgb, var(--acc) 18%, transparent); color: var(--acc); }
+    /* Vertical margin leaves room for the first/last hour labels, which are
+       centred on their grid line and would otherwise be clipped. */
+    .wk-row { position: relative; flex: 1; margin: 8px 0; min-height: calc(var(--mins) * .75px); }
+    .wk-gut { position: sticky; left: 0; z-index: 4; background: var(--bg); }
+    .wk-gut span { position: absolute; right: 4px; transform: translateY(-50%); font-size: 9.5px; font-weight: 600; color: var(--faint); white-space: nowrap; }
+    .wk-col { position: relative; border-radius: 8px; background: var(--card); border: 1px solid var(--line);
+      background-image: repeating-linear-gradient(180deg, transparent 0, transparent calc(var(--hr) - 1px), var(--line) calc(var(--hr) - 1px), var(--line) var(--hr)); }
+    .wk-col.today { border-color: color-mix(in srgb, var(--acc) 40%, transparent); }
+    .wk-col.hol { background: repeating-linear-gradient(135deg, var(--card) 0 8px, var(--card2) 8px 16px); }
+    .wk-hol { position: absolute; inset: 8px 4px auto; text-align: center; font-size: 10.5px; font-weight: 700; color: var(--gold); }
+    .bl { position: absolute; border-radius: 7px; padding: 4px 5px; overflow: hidden; cursor: pointer; font-size: 10.5px; line-height: 1.25;
+      background: color-mix(in srgb, var(--c) 22%, var(--card)); border-left: 3px solid var(--c); transition: filter .15s; }
+    .bl:hover { filter: brightness(1.15); z-index: 2; }
+    .bl b { display: block; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bl span { color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+    .bl.cxl { opacity: .5; } .bl.cxl b { text-decoration: line-through; }
+    .bl.now { box-shadow: 0 0 0 1.5px var(--c), 0 0 16px color-mix(in srgb, var(--c) 40%, transparent); }
+    .now-line { position: absolute; left: 0; right: 0; height: 2px; background: var(--red); z-index: 3; pointer-events: none; }
+    .now-line::before { content: ''; position: absolute; left: -4px; top: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
+
+    /* ===== Footer ===== */
+    .ft { flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 0 14px 10px; font-size: 11px; color: var(--faint); min-height: 22px; flex-wrap: wrap; }
+    .ft .pill { padding: 3px 9px; border-radius: 20px; background: var(--card2); font-weight: 600; color: var(--sub); white-space: nowrap; }
+    .ft .pill.gold { color: var(--gold); background: color-mix(in srgb, var(--gold) 12%, transparent); }
+
+    /* ===== Slide-over panels ===== */
+    .panel { position: absolute; inset: 0; z-index: 50; background: var(--bg); display: flex; flex-direction: column; opacity: 0; pointer-events: none; transform: translateY(10px); transition: opacity .22s, transform .22s; }
+    .panel.open { opacity: 1; pointer-events: auto; transform: none; }
+    .p-hd { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+    .p-hd span { font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; flex: 1; }
+    .p-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; scrollbar-width: thin; scrollbar-color: var(--card3) transparent; }
+    .p-ft { flex-shrink: 0; display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); align-items: center; }
+    .p-ft .grow { flex: 1; }
+
+    /* ===== Form controls ===== */
+    .lbl { font-family: 'Chakra Petch', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); margin-bottom: 6px; display: block; }
+    .f-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+    .f-row3 { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+    .f-row > *, .f-row3 > * { min-width: 0; }
+    .in, .sel, .ta { width: 100%; background: var(--card); border: 1px solid var(--line2); border-radius: 9px; padding: 8px 10px; font-family: inherit; font-size: 12.5px; color: var(--text); outline: none; transition: border-color .15s; }
+    .in:focus, .sel:focus, .ta:focus { border-color: var(--acc); }
+    .in::placeholder, .ta::placeholder { color: var(--faint); }
+    .ta { resize: vertical; min-height: 110px; font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; line-height: 1.5; }
+    [data-theme="dark"] .in, [data-theme="dark"] .sel { color-scheme: dark; }
+    .tg { display: flex; background: var(--card2); border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
+    .tg button { flex: 1; border: none; background: none; padding: 6px 4px; font-size: 11.5px; font-weight: 600; border-radius: 7px; cursor: pointer; color: var(--sub); white-space: nowrap; }
+    .tg button.on { background: var(--card3); color: var(--text); }
+    .sw-row { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+    .sw { width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; background: var(--c); transition: transform .12s; }
+    .sw:hover { transform: scale(1.12); }
+    .sw.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg) inset; }
+    .sw-cu { position: relative; width: 24px; height: 24px; border-radius: 50%; overflow: hidden; background: conic-gradient(#f87171, #fbbf24, #34d399, #22d3ee, #818cf8, #e879f9, #f87171); cursor: pointer; border: 2px solid transparent; }
+    .sw-cu.on { border-color: var(--text); }
+    .sw-cu input { position: absolute; inset: -6px; opacity: 0; cursor: pointer; width: 40px; height: 40px; }
+    .stk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(32px, 1fr)); gap: 4px; }
+    .stk-grid button { height: 32px; border-radius: 8px; border: 1px solid transparent; background: var(--card); font-size: 17px; cursor: pointer; }
+    .stk-grid button:hover { background: var(--card2); }
+    .stk-grid button.on { border-color: var(--acc); background: color-mix(in srgb, var(--acc) 16%, transparent); }
+    .stk-grid .none { font-size: 11px; font-weight: 600; color: var(--faint); }
+    .zr { display: flex; align-items: center; gap: 10px; }
+    .zr input { flex: 1; accent-color: var(--acc); }
+    .zr span { font-size: 11.5px; font-weight: 600; color: var(--sub); min-width: 38px; text-align: right; }
+    .hint { font-size: 11.5px; color: var(--faint); line-height: 1.5; }
+    .hint b { color: var(--sub); }
+    .err { font-size: 11.5px; color: var(--red); font-weight: 500; line-height: 1.5; }
+    .ok { font-size: 11.5px; color: var(--green); font-weight: 600; }
+    .box { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .step { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; }
+    .step i { font-style: normal; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; background: var(--acc); color: #fff; flex-shrink: 0; }
+    .prompt { max-height: 120px; overflow-y: auto; white-space: pre-wrap; font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; line-height: 1.5; color: var(--sub); background: var(--card2); border-radius: 8px; padding: 8px 10px; }
+    .pv { display: flex; flex-direction: column; gap: 4px; max-height: 210px; overflow-y: auto; }
+    .pv-it { display: grid; grid-template-columns: 34px 82px 1fr; gap: 8px; font-size: 11.5px; padding: 5px 8px; border-radius: 7px; background: var(--card2); align-items: center; }
+    .pv-it b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pv-it .d { font-family: 'Chakra Petch', sans-serif; font-weight: 700; color: var(--acc); font-size: 10.5px; }
+    .pv-it .t { color: var(--sub); font-variant-numeric: tabular-nums; }
+    .hl { display: flex; flex-direction: column; gap: 6px; }
+    .hl-it { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); font-size: 12px; }
+    .hl-it .nm { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hl-it .dt { color: var(--sub); font-size: 11px; white-space: nowrap; }
+    .hl-it.past { opacity: .45; }
+    .toast { position: absolute; left: 50%; bottom: 14px; transform: translate(-50%, 20px); background: var(--card3); color: var(--text); font-size: 12px; font-weight: 600; padding: 8px 14px; border-radius: 10px; box-shadow: var(--shadow); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 100; width: max-content; max-width: calc(100% - 24px); text-align: center; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    /* Narrow embeds: tighten things up. The header must never push the
+       buttons (especially Settings) out of view, so the title text goes first. */
+    @container app (max-width: 480px) {
+      .hd-date { display: none; }
+      .hd-title { display: none; }
+    }
+    /* Phone width: the week badge moves into the day/week heading, and week
+       columns get a minimum width so classes stay readable (scroll sideways). */
+    @container app (max-width: 520px) {
+      .wk { --colmin: 86px; }
+      .bl { font-size: 11px; padding: 5px 6px; }
+    }
+    @container app (max-width: 420px) {
+      .ab-badge { display: none; }
+      /* Long course names wrap to two lines instead of being cut short. */
+      .h-title, .it-title .tx { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      .h-title { font-size: 18px; }
+      .it-title { align-items: flex-start; }
+      /* Date pickers are wide; stack them. Holiday names may wrap. */
+      .f-dates { grid-template-columns: minmax(0, 1fr); }
+      .hl-it { flex-wrap: wrap; }
+      .hl-it .nm { white-space: normal; }
+      #hKind button { white-space: normal; }
+    }
+    @container app (max-width: 380px) {
+      .hd { padding: 10px 10px 8px; gap: 6px; }
+      .hd-l { gap: 4px; }
+      .seg button { padding: 5px 7px; }
+      .ib { width: 28px; height: 28px; }
+      .main { padding: 2px 10px 10px; }
+      .it { grid-template-columns: 54px 1fr auto; gap: 8px; padding-left: 10px; }
+      .it-time { font-size: 10.5px; white-space: nowrap; }
+      .gap { padding-left: 62px; }
+      .h-row { flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+      .h-big { font-size: 26px; }
+      .f-row3 { grid-template-columns: 1fr 1fr; }
+      .ft { padding: 0 10px 8px; }
+    }
+
+    /* ===== Touchscreens (phones, tablets, Notion mobile app) ===== */
+    button, a, [data-act], .it, .sw, .sw-cu { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    .main, .p-body { overscroll-behavior: contain; }
+    @media (pointer: coarse) {
+      /* Bigger tap targets (~36px+). */
+      .ib { width: 36px; height: 36px; }
+      .ib svg { width: 18px; height: 18px; }
+      .dnav .ib, .it-act .ib { width: 34px; height: 34px; }
+      .seg button { padding: 8px 11px; font-size: 12px; }
+      .tg button { padding: 9px 4px; font-size: 12px; }
+      .today-btn { padding: 6px 10px; }
+      .btn { padding: 10px 16px; font-size: 13px; }
+      .btn.sm { padding: 9px 13px; font-size: 12.5px; }
+      .link { padding: 6px 2px; }
+      .sw, .sw-cu { width: 30px; height: 30px; }
+      .stk-grid { grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); }
+      .stk-grid button { height: 40px; font-size: 20px; }
+      .zr input { height: 28px; }
+      /* 16px stops iOS Safari from zooming the page when a field is focused. */
+      .in, .sel, .ta { font-size: 16px; padding: 10px 12px; }
+      .ta { font-size: 14px; }
+      /* No hover on touch: keep the per-class buttons visible. */
+      .it-act { opacity: .85; }
+    }
+    @container app (max-width: 380px) {
+      @media (pointer: coarse) {
+        .ib { width: 32px; height: 32px; }
+        .seg button { padding: 7px 8px; }
+      }
+    }
+    @keyframes swipeIn { from { opacity: 0; transform: translateX(var(--dx, 0)); } to { opacity: 1; transform: none; } }
+    .swiped .list, .swiped .banner, .swiped .empty { animation: swipeIn .22s ease-out; }
+  </style>
+</head>
+
+<body>
+  <div class="app" id="app">
+
+    <header class="hd">
+      <div class="hd-l">
+        <div class="logo"><svg viewBox="0 0 24 24"><path d="M12 2l2.6 6.4L21 9l-5 4.4L17.5 20 12 16.6 6.5 20 8 13.4 3 9l6.4-.6z"/></svg></div>
+        <span class="hd-title">Timetable</span>
+        <span class="ab-badge" id="abBadge" hidden></span>
+        <div class="seg" id="viewSeg"><button data-v="today">Today</button><button data-v="week">Week</button></div>
+        <button class="ib" id="importBtn" title="Import with AI"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></button>
+        <button class="ib" id="addBtn" title="Add a class"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button class="ib" id="holBtn" title="Holidays & exam weeks"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg></button>
+        <button class="ib" id="gearBtn" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg></button>
+      </div>
+      <span class="hd-date" id="hdDate"></span>
+    </header>
+
+    <main class="main" id="main"></main>
+    <footer class="ft" id="ft"></footer>
+
+    <!-- ===== Class editor ===== -->
+    <div class="panel" id="pEdit">
+      <div class="p-hd"><span id="edTitle">Edit class</span><button class="ib" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+      <div class="p-body">
+        <div><label class="lbl" for="fTitle">Course name</label><input class="in" id="fTitle" maxlength="80" placeholder="e.g. General Chemistry"></div>
+        <div class="f-row">
+          <div><label class="lbl" for="fCode">Code</label><input class="in" id="fCode" maxlength="24" placeholder="CHEM 111"></div>
+          <div><label class="lbl" for="fType">Type</label><select class="sel" id="fType"></select></div>
+        </div>
+        <div class="f-row3">
+          <div><label class="lbl" for="fDay">Day</label><select class="sel" id="fDay"></select></div>
+          <div><label class="lbl" for="fStart">Start</label><input class="in" id="fStart" type="time"></div>
+          <div><label class="lbl" for="fEnd">End</label><input class="in" id="fEnd" type="time"></div>
+        </div>
+        <div class="f-row">
+          <div><label class="lbl" for="fRoom">Room</label><input class="in" id="fRoom" maxlength="40" placeholder="B-204"></div>
+          <div><label class="lbl" for="fTeacher">Teacher</label><input class="in" id="fTeacher" maxlength="50" placeholder="Dr. Kim"></div>
+        </div>
+        <div id="fWeekWrap"><label class="lbl">Repeats</label><div class="tg" id="fWeek"><button data-v="">Every week</button><button data-v="A">Week A</button><button data-v="B">Week B</button></div></div>
+        <div><label class="lbl">Colour</label><div class="sw-row" id="fColors"></div></div>
+        <div><label class="lbl">Sticker</label><div class="stk-grid" id="fStickers"></div></div>
+        <div><label class="lbl" for="fNote">Note</label><input class="in" id="fNote" maxlength="120" placeholder="e.g. bring lab coat"></div>
+        <div class="err" id="fErr"></div>
+      </div>
+      <div class="p-ft">
+        <button class="btn dgr sm" id="fDel">Delete</button>
+        <span class="grow"></span>
+        <button class="btn sm" data-close>Cancel</button>
+        <button class="btn pri sm" id="fSave">Save</button>
+      </div>
+    </div>
+
+    <!-- ===== AI import ===== -->
+    <div class="panel" id="pImport">
+      <div class="p-hd"><span>Import with AI</span><button class="ib" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+      <div class="p-body">
+        <div class="box">
+          <div class="step"><i>1</i>Copy this prompt</div>
+          <div class="prompt" id="promptText"></div>
+          <div class="btns" style="justify-content:flex-start"><button class="btn pri sm" id="copyPrompt">Copy prompt</button></div>
+        </div>
+        <div class="box">
+          <div class="step"><i>2</i>Paste it into an AI chat with a photo of your timetable</div>
+          <div class="hint">Works with Claude, ChatGPT or Gemini. Attach a screenshot or photo of your timetable, paste the prompt, and send. If the timetable shows holiday dates, they come through too.</div>
+        </div>
+        <div class="box">
+          <div class="step"><i>3</i>Paste the AI's reply here</div>
+          <textarea class="ta" id="impText" spellcheck="false" placeholder='Paste the whole reply — the ```json block is fine.'></textarea>
+          <div class="err" id="impErr"></div>
+          <div id="impPreview"></div>
+        </div>
+      </div>
+      <div class="p-ft">
+        <div class="tg" id="impMode" style="flex:1;max-width:220px"><button data-v="replace">Replace all</button><button data-v="merge">Add to current</button></div>
+        <span class="grow"></span>
+        <button class="btn pri sm" id="impGo" disabled>Import</button>
+      </div>
+    </div>
+
+    <!-- ===== Holidays ===== -->
+    <div class="panel" id="pHol">
+      <div class="p-hd"><span>Holidays & exams</span><button class="ib" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+      <div class="p-body">
+        <div class="box">
+          <div><label class="lbl" for="hName">Name</label><input class="in" id="hName" maxlength="50" placeholder="e.g. Winter break"></div>
+          <div class="f-row f-dates">
+            <div><label class="lbl" for="hStart">From</label><input class="in" id="hStart" type="date"></div>
+            <div><label class="lbl" for="hEnd">To (optional)</label><input class="in" id="hEnd" type="date"></div>
+          </div>
+          <div><label class="lbl">Kind</label><div class="tg" id="hKind"><button data-v="holiday">🏖 Holiday — no classes</button><button data-v="exam">📝 Exam week</button></div></div>
+          <div class="err" id="hErr"></div>
+          <div class="btns" style="justify-content:flex-start"><button class="btn pri sm" id="hAdd">Add</button></div>
+        </div>
+        <div class="hl" id="hList"></div>
+      </div>
+    </div>
+
+    <!-- ===== Settings ===== -->
+    <div class="panel" id="pSet">
+      <div class="p-hd"><span>Settings</span><button class="ib" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+      <div class="p-body">
+        <div><label class="lbl">Theme</label><div class="tg" id="sTheme"><button data-v="auto">Auto</button><button data-v="dark">Dark</button><button data-v="light">Light</button></div></div>
+        <div><label class="lbl">Accent</label><div class="sw-row" id="sAccent"></div></div>
+        <div class="f-row">
+          <div><label class="lbl">Time</label><div class="tg" id="sFmt"><button data-v="12">12 h</button><button data-v="24">24 h</button></div></div>
+          <div><label class="lbl">Week starts</label><div class="tg" id="sWs"><button data-v="0">Mon</button><button data-v="6">Sun</button></div></div>
+        </div>
+        <div><label class="lbl">Weekends in week view</label><div class="tg" id="sWe"><button data-v="auto">Auto</button><button data-v="show">Always</button><button data-v="hide">Hide</button></div></div>
+        <div><label class="lbl">Zoom</label><div class="zr"><input type="range" id="sZoom" min="70" max="140" step="5"><span id="sZoomL"></span></div></div>
+        <div class="box">
+          <div class="f-row" style="align-items:end">
+            <div><label class="lbl">Week A / Week B</label><div class="tg" id="sAb"><button data-v="off">Off</button><button data-v="on">On</button></div></div>
+            <div id="sAbNowWrap"><label class="lbl">This week is</label><div class="tg" id="sAbNow"><button data-v="A">Week A</button><button data-v="B">Week B</button></div></div>
+          </div>
+          <div class="hint">For timetables that alternate every other week. Mark each class as Week A, Week B or every week in its editor.</div>
+        </div>
+        <div class="box">
+          <label class="lbl" for="sLog" style="margin:0">Attendance link (optional)</label>
+          <input class="in" id="sLog" placeholder="https://www.notion.so/…" spellcheck="false">
+          <div class="hint">Paste the link to your <b>Today's Attendance</b> page and a <b>Log attendance</b> button appears during class.</div>
+          <div class="err" id="sLogErr"></div>
+        </div>
+        <div class="box">
+          <label class="lbl" style="margin:0">Your data</label>
+          <div class="hint">Notion keeps widget data per device. To see the same timetable on your phone and laptop, copy the <b>portable link</b> and use it as the embed link.</div>
+          <div class="btns" style="justify-content:flex-start">
+            <button class="btn pri sm" id="sPortable">Copy portable link</button>
+            <button class="btn sm" id="sBackup">Copy backup</button>
+            <button class="btn sm" id="sRestoreBtn">Restore…</button>
+          </div>
+          <div id="sRestoreWrap" hidden>
+            <textarea class="ta" id="sRestore" spellcheck="false" placeholder="Paste a backup here"></textarea>
+            <div class="err" id="sRestoreErr"></div>
+            <div class="btns" style="justify-content:flex-start;margin-top:8px"><button class="btn pri sm" id="sRestoreGo">Restore backup</button></div>
+          </div>
+        </div>
+        <div class="btns" style="justify-content:flex-start" id="sDanger">
+          <button class="link" id="sClear">Clear timetable</button>
+          <button class="link" id="sReset">Reset settings</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Manual-copy fallback (when the embed blocks the clipboard) ===== -->
+    <div class="panel" id="pCopy" style="z-index:60">
+      <div class="p-hd"><span id="cpTitle">Copy this</span><button class="ib" id="cpClose" title="Close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+      <div class="p-body">
+        <div class="hint">This page doesn't allow automatic copying. The text below is selected — press <b>Ctrl + C</b> (or <b>⌘ + C</b>), or long-press it on a phone and choose <b>Copy</b>.</div>
+        <textarea class="ta" id="cpText" readonly spellcheck="false" style="min-height:220px"></textarea>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <script>
+  /* ==========================================================================
+     1. CONSTANTS & STATE
+     ========================================================================== */
+  const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const DAYS_FULL=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const TYPES=['Lecture','Lab','Tutorial','Seminar','Practical','Other'];
+  const PALETTE=['#a78bfa','#60a5fa','#34d399','#f59e0b','#f472b6','#22d3ee','#fb7185','#a3e635','#c084fc','#fb923c','#2dd4bf','#facc15'];
+  const ACCENTS=['#a78bfa','#f5c451','#60a5fa','#34d399','#f472b6','#fb923c'];
+  const STICKERS=['📚','🧪','🧬','🔬','💻','🧮','📐','✏️','🎨','🎭','🎵','🌍','⚖️','💼','📊','🩺','🧠','⚙️','🔭','📝','🗣️','🏃','☕','⭐','✨','🔥','💡','🎯','🏆','📌','❤️','🌙','🍀','🐱','🌸','🎧','📖','🧩','🚀','💎'];
+
+  const INSTANCE=new URLSearchParams(location.search).get('instance')||'default';
+  const KEY='tt1_'+INSTANCE;
+  const DEF={theme:'dark',accent:'#a78bfa',fmt:'12',ws:0,weekends:'auto',zoom:100,view:'today',ab:false,abAnchor:'',logUrl:'',impMode:'replace'};
+  let S={...DEF};
+  let D={classes:[],holidays:[],cancels:[]};
+  let viewDate=today();                 // the day the Today view / week view is looking at
+  let lastToday=ymd(today());           // detects midnight rollover
+
+  const $=id=>document.getElementById(id);
+  const _mq=window.matchMedia('(prefers-color-scheme: dark)');
+  function effectiveTheme(){ return S.theme==='auto'?(_mq.matches?'dark':'light'):S.theme; }
+
+  /* Persistence. Storage can throw inside sandboxed/3rd-party iframes, so every
+     access is guarded; the widget keeps working in memory either way. */
+  function save(){ try{ localStorage.setItem(KEY,JSON.stringify({s:S,d:D})); }catch(e){} }
+  function loadLocal(){
+    try{
+      const raw=localStorage.getItem(KEY); if(!raw) return false;
+      const p=JSON.parse(raw);
+      S={...DEF,...(p.s||{})};
+      D=sanitizeData(p.d);
+      return true;
+    }catch(e){ return false; }
+  }
+
+  /* ==========================================================================
+     2. SMALL HELPERS
+     ========================================================================== */
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  function uid(){ return Math.random().toString(36).slice(2,10); }
+  function isHex(c){ return /^#[0-9a-f]{6}$/i.test(c||''); }
+  function today(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
+  function ymd(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+  function parseYmd(s){ const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(s||''); if(!m) return null; const d=new Date(+m[1],+m[2]-1,+m[3]); return d.getMonth()===+m[2]-1?d:null; }
+  function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+  function dayIdx(d){ return (d.getDay()+6)%7; }                       // 0=Mon … 6=Sun
+  function toMin(t){ const m=/^(\d{1,2}):(\d{2})$/.exec(t||''); return m?(+m[1])*60+(+m[2]):NaN; }
+  function nowMin(){ const n=new Date(); return n.getHours()*60+n.getMinutes()+n.getSeconds()/60; }
+  function fmtT(min){
+    min=Math.round(min); const h=Math.floor(min/60)%24, m=min%60;
+    if(S.fmt==='24') return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+    return (h%12||12)+':'+String(m).padStart(2,'0')+(h<12?' am':' pm');
+  }
+  function fmtHourLbl(h){ if(S.fmt==='24') return String(h%24).padStart(2,'0')+':00'; const hh=h%24; return (hh%12||12)+(hh<12?'a':'p'); }
+  function fmtDur(min){ min=Math.max(0,Math.round(min)); const h=Math.floor(min/60), m=min%60; return h?(m?h+'h '+m+'m':h+'h'):m+'m'; }
+  function fmtDate(d,long){ return (long?DAYS_FULL:DAYS)[dayIdx(d)]+', '+MONTHS[d.getMonth()]+' '+d.getDate(); }
+  function sameDay(a,b){ return ymd(a)===ymd(b); }
+  function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),2200); }
+
+  /* Clipboard: the async API is often blocked inside iframes (Notion doesn't
+     grant clipboard-write), so fall back to the old execCommand path. */
+  async function copyText(text){
+    try{ await navigator.clipboard.writeText(text); return true; }catch(e){}
+    try{
+      const ta=document.createElement('textarea'); ta.value=text; ta.setAttribute('readonly','');
+      ta.style.cssText='position:fixed;top:-1000px;opacity:0'; document.body.appendChild(ta);
+      ta.select(); const ok=document.execCommand('copy'); ta.remove(); return ok;
+    }catch(e){ return false; }
+  }
+  /* Copy, or — if the embed blocks the clipboard — show the text selected so
+     it can be copied by hand. Never leaves the user with just "Copy failed". */
+  async function copyOrShow(text,okMsg,title){
+    if(await copyText(text)){ toast(okMsg); return; }
+    $('cpTitle').textContent=title||'Copy this';
+    $('cpText').value=text;
+    $('pCopy').classList.add('open');
+    setTimeout(()=>{ $('cpText').focus(); $('cpText').select(); },60);
+  }
+  $('cpClose').onclick=()=>$('pCopy').classList.remove('open');
+
+  /* ==========================================================================
+     3. DATA VALIDATION  (everything that enters D goes through here)
+     ========================================================================== */
+  function str(v,max){ return String(v==null?'':v).replace(/\s+/g,' ').trim().slice(0,max); }
+  function parseDay(v){
+    if(typeof v==='number'&&v>=0&&v<=6) return v;
+    const s=String(v||'').trim().toLowerCase().replace(/\./g,'');
+    const map={mon:0,tue:1,tues:1,wed:2,thu:3,thur:3,thurs:3,fri:4,sat:5,sun:6};
+    if(map[s]!=null) return map[s];
+    const k=s.slice(0,3); return map[k]!=null&&DAYS_FULL[map[k]].toLowerCase().startsWith(s)?map[k]:null;
+  }
+  /* Accepts 09:00, 9:00, 9.30, 0930, 9am, 9:30 PM, 21:15 → 'HH:MM' or null. */
+  function parseTime(v){
+    const s=String(v||'').trim().toLowerCase().replace(/\s+/g,'').replace(/\./g,':').replace(/:(am|pm)$/,'$1').replace(/(a|p)m?$/,'$1m');
+    let m=/^(\d{1,2})(?::?(\d{2}))?(am|pm)?$/.exec(s);
+    if(!m) return null;
+    let h=+m[1], mi=m[2]?+m[2]:0;
+    if(m[3]){ if(h<1||h>12) return null; if(m[3]==='pm'&&h!==12) h+=12; if(m[3]==='am'&&h===12) h=0; }
+    if(h>23||mi>59) return null;
+    return String(h).padStart(2,'0')+':'+String(mi).padStart(2,'0');
+  }
+  function normType(v){ const s=str(v,20).toLowerCase(); return TYPES.find(t=>t.toLowerCase()===s)||(s?'Other':''); }
+
+  /* Validate one class. Returns {c} or {err}. */
+  function cleanClass(o,i){
+    const where='Class '+(i+1);
+    if(!o||typeof o!=='object') return {err:where+': not an object.'};
+    const title=str(o.title||o.name||o.course,80);
+    if(!title) return {err:where+': missing a course name ("title").'};
+    const day=parseDay(o.day);
+    if(day==null) return {err:where+' ('+title+'): unknown day "'+str(o.day,12)+'".'};
+    const start=parseTime(o.start), end=parseTime(o.end);
+    if(!start) return {err:where+' ('+title+'): bad start time "'+str(o.start,12)+'".'};
+    if(!end) return {err:where+' ('+title+'): bad end time "'+str(o.end,12)+'".'};
+    if(toMin(end)<=toMin(start)) return {err:where+' ('+title+'): ends before it starts.'};
+    const week=/^[ab]$/i.test(str(o.week,1))?str(o.week,1).toUpperCase():'';
+    return {c:{
+      id:typeof o.id==='string'&&/^[a-z0-9]{4,12}$/.test(o.id)?o.id:uid(),
+      title, code:str(o.code,24), day, start, end,
+      room:str(o.room,40), teacher:str(o.teacher,50), type:normType(o.type),
+      color:isHex(o.color)?o.color:'', sticker:str(o.sticker,8), note:str(o.note,120), week
+    }};
+  }
+  function cleanHoliday(o){
+    if(!o||typeof o!=='object') return null;
+    const name=str(o.name,50)||'Holiday';
+    const s=parseYmd(str(o.start,10)); if(!s) return null;
+    let e=parseYmd(str(o.end,10))||s; if(e<s) e=s;
+    return {id:typeof o.id==='string'&&/^[a-z0-9]{4,12}$/.test(o.id)?o.id:uid(), name, start:ymd(s), end:ymd(e), kind:o.kind==='exam'?'exam':'holiday'};
+  }
+  /* Give every course a colour: same course (code or title) → same colour. */
+  function assignColors(list,existing){
+    const map={};
+    (existing||[]).forEach(c=>{ if(c.color) map[(c.code||c.title).toLowerCase()]=c.color; });
+    let n=Object.keys(map).length;
+    list.forEach(c=>{
+      const k=(c.code||c.title).toLowerCase();
+      if(c.color){ if(!map[k]) map[k]=c.color; return; }
+      if(!map[k]) map[k]=PALETTE[n++%PALETTE.length];
+      c.color=map[k];
+    });
+    return list;
+  }
+  function sanitizeData(d){
+    const out={classes:[],holidays:[],cancels:[]};
+    if(!d||typeof d!=='object') return out;
+    (Array.isArray(d.classes)?d.classes:[]).forEach((o,i)=>{ const r=cleanClass(o,i); if(r.c) out.classes.push(r.c); });
+    assignColors(out.classes);
+    (Array.isArray(d.holidays)?d.holidays:[]).forEach(o=>{ const h=cleanHoliday(o); if(h) out.holidays.push(h); });
+    const ids=new Set(out.classes.map(c=>c.id));
+    (Array.isArray(d.cancels)?d.cancels:[]).forEach(o=>{ if(o&&parseYmd(o.date)&&ids.has(o.id)) out.cancels.push({date:o.date,id:o.id}); });
+    return out;
+  }
+
+  /* ==========================================================================
+     4. SCHEDULE LOGIC
+     ========================================================================== */
+  function holidayOn(ds,kind){ return D.holidays.find(h=>ds>=h.start&&ds<=h.end&&(!kind||h.kind===kind))||null; }
+  function mondayOf(d){ return addDays(d,-dayIdx(d)); }
+  /* Week A/B label for a date: parity of whole weeks since the anchor Monday. */
+  function weekLabel(d){
+    if(!S.ab) return '';
+    const anchor=parseYmd(S.abAnchor); if(!anchor) return '';
+    const diff=Math.round((mondayOf(d)-mondayOf(anchor))/(7*864e5));
+    return ((diff%2)+2)%2===0?'A':'B';
+  }
+  function isCancelled(id,ds){ return D.cancels.some(x=>x.id===id&&x.date===ds); }
+  /* All classes on a date (holidays remove them; exam weeks don't). Each
+     result carries s/e in minutes and a cancelled flag for that date. */
+  function classesOn(d){
+    const ds=ymd(d);
+    if(holidayOn(ds,'holiday')) return [];
+    const idx=dayIdx(d), wl=weekLabel(d);
+    return D.classes
+      .filter(c=>c.day===idx&&(!S.ab||!c.week||c.week===wl))
+      .map(c=>({...c,s:toMin(c.start),e:toMin(c.end),cancelled:isCancelled(c.id,ds)}))
+      .sort((a,b)=>a.s-b.s||a.e-b.e);
+  }
+  /* First non-cancelled class after (date, minute), searching up to 3 weeks. */
+  function nextClassFrom(d,min){
+    for(let i=0;i<21;i++){
+      const day=addDays(d,i);
+      const c=classesOn(day).find(c=>!c.cancelled&&(i>0||c.s>min));
+      if(c) return {c,day,i};
+    }
+    return null;
+  }
+  function whenLabel(i,day){ return i===0?'today':i===1?'tomorrow':DAYS_FULL[dayIdx(day)]+(i>6?' '+MONTHS[day.getMonth()]+' '+day.getDate():''); }
+  function nextHoliday(){
+    const t=ymd(today());
+    return D.holidays.filter(h=>h.end>=t).sort((a,b)=>a.start.localeCompare(b.start))[0]||null;
+  }
+
+  /* ==========================================================================
+     5. RENDERING — shared bits
+     ========================================================================== */
+  const ICON={
+    edit:'<svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>',
+    cancel:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>',
+    restore:'<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 109-9 9.7 9.7 0 00-6.7 2.7L3 8M3 3v5h5"/></svg>',
+    left:'<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>',
+    right:'<svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>'
+  };
+  function colorOf(c){ return isHex(c.color)?c.color:PALETTE[0]; }
+  function stk(c){ return c.sticker?`<span class="stk">${esc(c.sticker)}</span>`:''; }
+  function metaChips(c){
+    let h='';
+    if(c.code) h+=`<span class="chip c">${esc(c.code)}</span>`;
+    if(c.room) h+=`<span class="chip">📍 ${esc(c.room)}</span>`;
+    if(c.type) h+=`<span class="chip">${esc(c.type)}</span>`;
+    if(c.teacher) h+=`<span class="chip">${esc(c.teacher)}</span>`;
+    if(S.ab&&c.week) h+=`<span class="chip">Week ${esc(c.week)}</span>`;
+    return h;
+  }
+  function logBtn(){
+    return S.logUrl?`<a class="log-btn" href="${esc(S.logUrl)}" target="_blank" rel="noopener noreferrer">✓ Log attendance</a>`:'';
+  }
+
+  function render(){
+    const t=today();
+    // Full day name only when there's room for it (the header gives way first).
+    $('hdDate').textContent=$('app').clientWidth>=640?fmtDate(t,true):fmtDate(t);
+    const wl=weekLabel(t);
+    $('abBadge').hidden=!wl; $('abBadge').textContent='WEEK '+wl;
+    document.querySelectorAll('#viewSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===S.view));
+    const main=$('main');
+    const keep=main.scrollTop;
+    if(!D.classes.length) main.innerHTML=emptyHtml();
+    else if(S.view==='week') renderWeek(main);
+    else main.innerHTML=heroHtml()+dayHtml(viewDate);
+    if(S.view!=='week') main.scrollTop=keep;
+    renderFooter();
+  }
+
+  function emptyHtml(){
+    return `<div class="empty">
+      <div class="empty-ic">🗓️</div>
+      <h3>No timetable yet</h3>
+      <p>Snap a photo of your timetable and let an AI fill this in for you — it takes about a minute.</p>
+      <div class="btns">
+        <button class="btn pri" data-act="import">Import with AI</button>
+        <button class="btn" data-act="add">Add manually</button>
+      </div>
+      <div class="hint">or try a sample:
+        <button class="link" data-act="sample" data-k="btech">B.Tech CSE</button> ·
+        <button class="link" data-act="sample" data-k="general">General college</button></div>
+    </div>`;
+  }
+
+  function renderFooter(){
+    const parts=[];
+    const h=nextHoliday(), t=ymd(today());
+    if(h){
+      if(h.start<=t) parts.push(`<span class="pill gold">${h.kind==='exam'?'📝':'🏖'} ${esc(h.name)} · ${h.end===t?'ends today':'until '+fmtDate(parseYmd(h.end))}</span>`);
+      else{
+        const n=Math.round((parseYmd(h.start)-today())/864e5);
+        parts.push(`<span class="pill gold">${h.kind==='exam'?'📝':'🏖'} ${esc(h.name)} in ${n} day${n===1?'':'s'}</span>`);
+      }
+    }
+    if(D.classes.length){
+      // Count only what runs this week (Week A/B classes from the other week are skipped).
+      const wl=weekLabel(today());
+      const live=D.classes.filter(c=>!S.ab||!wl||!c.week||c.week===wl);
+      const n=live.length, hrs=live.reduce((a,c)=>a+toMin(c.end)-toMin(c.start),0);
+      parts.push(`<span class="pill">${n} class${n===1?'':'es'} · ${fmtDur(hrs)} / week</span>`);
+    }
+    $('ft').innerHTML=parts.join('');
+  }
+
+  /* ==========================================================================
+     6. RENDERING — hero (Now / Next), always about the real "today"
+     ========================================================================== */
+  function heroHtml(){
+    const t=today(), ds=ymd(t), min=nowMin();
+    const hol=holidayOn(ds,'holiday');
+    const exam=holidayOn(ds,'exam');
+    const examBanner=exam?`<div class="banner exam">📝 ${esc(exam.name)} — good luck!</div>`:'';
+
+    if(hol){
+      // Days left in the break (today included), then the first day that
+      // actually has a class (a break ending Friday resumes Monday, not Saturday).
+      let back=addDays(parseYmd(hol.end),1);
+      for(let i=0;i<60&&holidayOn(ymd(back),'holiday');i++) back=addDays(back,1);
+      const n=Math.round((back-t)/864e5);
+      const nc=nextClassFrom(back,-1);
+      const resume=nc?`Back to class ${fmtDate(nc.day,true)} · ${stk(nc.c)}${esc(nc.c.title)} at ${fmtT(nc.c.s)}`:`Break ends ${fmtDate(addDays(back,-1),true)}`;
+      return `<div class="hero calm"><div class="h-lbl">🏖 Holiday</div>
+        <div class="h-row"><div class="h-title">${esc(hol.name)}</div><div class="h-big">${n}<small>DAY${n===1?'':'S'} OFF</small></div></div>
+        <div class="h-meta">${resume}</div></div>`;
+    }
+
+    const list=classesOn(t).filter(c=>!c.cancelled);
+    const cur=list.find(c=>c.s<=min&&min<c.e);
+    const nxt=list.find(c=>c.s>min);
+
+    if(cur){
+      const p=Math.min(100,Math.max(0,(min-cur.s)/(cur.e-cur.s)*100));
+      const left=Math.max(1,Math.ceil(cur.e-min));          // never shows "0M LEFT"
+      let next='';
+      if(nxt){
+        const gap=nxt.s-cur.e;
+        next=`<div class="h-next">Next: ${stk(nxt)}<b>${esc(nxt.title)}</b> at ${fmtT(nxt.s)}${nxt.room?' · '+esc(nxt.room):''}${gap>=15?' · '+fmtDur(gap)+' break before it':''}${logBtn()}</div>`;
+      }else next=`<div class="h-next">Last class of the day 🎉${logBtn()}</div>`;
+      return `<div class="hero" style="--acc:${colorOf(cur)}"><div class="h-lbl"><span class="pulse"></span>In class now</div>
+        <div class="h-row"><div class="h-title">${stk(cur)} ${esc(cur.title)}</div><div class="h-big">${fmtDur(left).toUpperCase()}<small>LEFT</small></div></div>
+        <div class="h-meta">${cur.room?'<span>📍 '+esc(cur.room)+'</span>':''}<span>${fmtT(cur.s)} – ${fmtT(cur.e)}</span>${cur.teacher?'<span>'+esc(cur.teacher)+'</span>':''}</div>
+        <div class="xp"><div class="xp-fill" style="width:${p.toFixed(1)}%"></div></div>${next}</div>${examBanner}`;
+    }
+
+    if(nxt){
+      const wait=nxt.s-min;
+      const first=list.indexOf(nxt)===0;
+      const lbl=first?'First up today':'Free time';
+      const prevEnd=first?null:list[list.indexOf(nxt)-1].e;
+      const p=prevEnd!=null?Math.min(100,Math.max(0,(min-prevEnd)/(nxt.s-prevEnd)*100)):null;
+      return `<div class="hero${first?'':' calm'}"><div class="h-lbl">${first?'⚡':'☕'} ${lbl}</div>
+        <div class="h-row"><div class="h-title">${stk(nxt)} ${esc(nxt.title)}</div><div class="h-big">${fmtDur(Math.ceil(wait)).toUpperCase()}<small>${first?'TO GO':'FREE'}</small></div></div>
+        <div class="h-meta"><span>Starts ${fmtT(nxt.s)}</span>${nxt.room?'<span>📍 '+esc(nxt.room)+'</span>':''}${nxt.type?'<span>'+esc(nxt.type)+'</span>':''}</div>
+        ${p!=null?`<div class="xp"><div class="xp-fill" style="width:${p.toFixed(1)}%"></div></div>`:''}${nxt.note?`<div class="note">📌 ${esc(nxt.note)}</div>`:''}
+        ${first?'':`<div class="h-next">Just had: <b>${esc(list[list.indexOf(nxt)-1].title)}</b>${logBtn()}</div>`}</div>${examBanner}`;
+    }
+
+    // Nothing left today: done (if there were classes) or a day off.
+    const any=classesOn(t).some(c=>!c.cancelled);
+    const nc=nextClassFrom(t,min);
+    // After class is when people log attendance, so the button stays here too.
+    const nextLine=nc?`<div class="h-next">Next: ${stk(nc.c)}<b>${esc(nc.c.title)}</b> ${whenLabel(nc.i,nc.day)} at ${fmtT(nc.c.s)}${any?logBtn():''}</div>`:(any&&S.logUrl?`<div class="h-next">${logBtn()}</div>`:'');
+    return `<div class="hero calm"><div class="h-lbl">${any?'✅ All done':'🌤 Free day'}</div>
+      <div class="h-row"><div class="h-title">${any?'Done for today 🎉':'No classes today'}</div></div>${nextLine}</div>${examBanner}`;
+  }
+
+  /* ==========================================================================
+     7. RENDERING — day list
+     ========================================================================== */
+  function dayHtml(d){
+    const isToday=sameDay(d,today()), ds=ymd(d), min=nowMin();
+    const label=isToday?'Today':sameDay(d,addDays(today(),1))?'Tomorrow':sameDay(d,addDays(today(),-1))?'Yesterday':fmtDate(d,true);
+    let h=`<div class="dnav"><button class="ib" data-act="prev" title="Previous day">${ICON.left}</button>
+      <span class="dnav-t">${label}${weekLabel(d)?' · Week '+weekLabel(d):''}</span>
+      ${isToday?'':'<button class="today-btn" data-act="today">Today</button>'}
+      <button class="ib" data-act="next" title="Next day">${ICON.right}</button></div>`;
+
+    const hol=holidayOn(ds,'holiday');
+    // Today's holiday is already the hero card; other days get a banner.
+    if(hol) return h+(isToday?'':`<div class="banner hol">🏖 ${esc(hol.name)} — no classes</div>`);
+    const exam=holidayOn(ds,'exam');
+    if(exam&&!isToday) h+=`<div class="banner exam" style="margin:0 0 8px">📝 ${esc(exam.name)}</div>`;
+
+    const list=classesOn(d);
+    if(!list.length) return h+`<div class="empty" style="padding:18px"><div class="empty-ic">🌤</div><p>No classes ${isToday?'today':'on this day'}.</p></div>`;
+
+    h+='<div class="list">';
+    let prevEnd=null;
+    list.forEach(c=>{
+      if(!c.cancelled){
+        if(prevEnd!=null&&c.s-prevEnd>=15) h+=`<div class="gap">${c.s-prevEnd>=45?'☕ ':''}Free · ${fmtDur(c.s-prevEnd)}</div>`;
+        prevEnd=Math.max(prevEnd||0,c.e);
+      }
+      const st=isToday?(min>=c.e?' past':(min>=c.s?' now':'')):(d<today()?' past':'');
+      h+=`<div class="it${st}${c.cancelled?' cxl':''}" style="--c:${colorOf(c)}" data-id="${c.id}" tabindex="0">
+        <div class="it-time">${fmtT(c.s)}<span>${fmtT(c.e)}</span></div>
+        <div class="it-main">
+          <div class="it-title">${stk(c)}<span class="tx">${esc(c.title)}</span></div>
+          <div class="chips">${c.cancelled?'<span class="chip cx">Cancelled</span>':''}${metaChips(c)}</div>
+          ${c.note?`<div class="note">📌 ${esc(c.note)}</div>`:''}
+        </div>
+        <div class="it-act">
+          <button class="ib" data-act="${c.cancelled?'uncancel':'cancel'}" data-id="${c.id}" title="${c.cancelled?'Restore for this day':'Cancel for this day only'}">${c.cancelled?ICON.restore:ICON.cancel}</button>
+          <button class="ib" data-act="edit" data-id="${c.id}" title="Edit">${ICON.edit}</button>
+        </div>
+      </div>`;
+    });
+    return h+'</div>';
+  }
+
+  /* ==========================================================================
+     8. RENDERING — week grid
+     ========================================================================== */
+  function renderWeek(main){
+    const startShift=S.ws===6?-1:0;                       // Sunday-first weeks start a day earlier
+    let first=mondayOf(viewDate);
+    if(startShift&&dayIdx(viewDate)===6) first=addDays(first,7);
+    first=addDays(first,startShift);
+    const all=[...Array(7)].map((_,i)=>addDays(first,i));
+    const days=all.filter(d=>{
+      const i=dayIdx(d); if(i<5) return true;
+      if(S.weekends==='show') return true;
+      if(S.weekends==='hide') return false;
+      return D.classes.some(c=>c.day===i);
+    });
+    const per=days.map(d=>classesOn(d));
+    const flat=per.flat();
+    let lo=flat.length?Math.floor(Math.min(...flat.map(c=>c.s))/60):8;
+    let hi=flat.length?Math.ceil(Math.max(...flat.map(c=>c.e))/60):17;
+    if(hi-lo<4) hi=lo+4;
+    const range=(hi-lo)*60;
+    const pct=m=>((m-lo*60)/range*100).toFixed(3)+'%';
+    const t=today(), min=nowMin();
+    const wl=weekLabel(first)||weekLabel(addDays(first,1));
+    const thisWeek=days.some(d=>sameDay(d,t));
+
+    let gut='';
+    for(let hr=lo;hr<=hi;hr++) gut+=`<span style="top:${pct(hr*60)}">${fmtHourLbl(hr)}</span>`;
+
+    let cols='', heads='';
+    days.forEach((d,di)=>{
+      const isT=sameDay(d,t), ds=ymd(d);
+      const ex=holidayOn(ds,'exam');
+      heads+=`<div class="wk-dh${isT?' today':''}"${ex?` title="${esc(ex.name)}"`:''}><b>${DAYS[dayIdx(d)]}</b>${d.getDate()}${ex?' 📝':''}</div>`;
+      const hol=holidayOn(ds,'holiday');
+      // Greedy lanes so overlapping classes sit side by side.
+      const lanes=[]; const placed=per[di].map(c=>{ let l=lanes.findIndex(e=>e<=c.s); if(l<0){ l=lanes.length; lanes.push(0); } lanes[l]=c.e; return {c,l}; });
+      const n=Math.max(1,lanes.length);
+      let blocks='';
+      placed.forEach(({c,l})=>{
+        const now=isT&&!c.cancelled&&min>=c.s&&min<c.e;
+        blocks+=`<div class="bl${c.cancelled?' cxl':''}${now?' now':''}" style="--c:${colorOf(c)};top:${pct(c.s)};height:calc(${((c.e-c.s)/range*100).toFixed(3)}% - 2px);left:calc(${(l/n*100).toFixed(2)}% + 2px);width:calc(${(100/n).toFixed(2)}% - 4px)" data-act="edit" data-id="${c.id}" title="${esc(c.title+' · '+fmtT(c.s)+'–'+fmtT(c.e)+(c.room?' · '+c.room:''))}">
+          <b>${c.sticker?esc(c.sticker)+' ':''}${esc(c.code||c.title)}</b><span>${fmtT(c.s)}</span>${c.room?`<span>${esc(c.room)}</span>`:''}</div>`;
+      });
+      const line=isT&&min>=lo*60&&min<=hi*60?`<div class="now-line" style="top:${pct(min)}"></div>`:'';
+      cols+=`<div class="wk-col${isT?' today':''}${hol?' hol':''}">${hol?`<div class="wk-hol">🏖<br>${esc(hol.name)}</div>`:''}${blocks}${line}</div>`;
+    });
+
+    const rangeLbl=MONTHS[days[0].getMonth()]+' '+days[0].getDate()+' – '+MONTHS[days[days.length-1].getMonth()]+' '+days[days.length-1].getDate();
+    main.innerHTML=`<div class="wk" style="--n:${days.length};--mins:${range};--hr:calc(100% / ${hi-lo})">
+      <div class="wk-nav"><button class="ib" data-act="prevw" title="Previous week">${ICON.left}</button>
+        <span class="dnav-t">${rangeLbl}${wl?' · Week '+wl:''}</span>
+        ${thisWeek?'':'<button class="today-btn" data-act="today">This week</button>'}
+        <button class="ib" data-act="nextw" title="Next week">${ICON.right}</button></div>
+      <div class="wk-scroll"><div class="wk-grid">
+        <div class="wk-head"><div></div>${heads}</div>
+        <div class="wk-row"><div class="wk-gut">${gut}</div>${cols}</div>
+      </div></div>
+    </div>`;
+
+    // Phones scroll the grid sideways. Keep the scroll position across the
+    // 20-second refresh; when a new week is shown, bring today into view.
+    const sc=main.querySelector('.wk-scroll'), key=ymd(first);
+    if(weekScroll.key===key){ sc.scrollLeft=weekScroll.left; sc.scrollTop=weekScroll.top; }
+    else{
+      const td=sc.querySelector('.wk-dh.today');
+      if(td&&sc.scrollWidth>sc.clientWidth) sc.scrollLeft=Math.max(0,td.offsetLeft-42);
+      // Start near the current time (or the first class) instead of the top.
+      const ln=sc.querySelector('.now-line');
+      if(ln) sc.scrollTop=Math.max(0,ln.offsetTop-sc.clientHeight/3);
+    }
+    weekScroll={key,left:sc.scrollLeft,top:sc.scrollTop};
+    sc.addEventListener('scroll',()=>{ weekScroll.left=sc.scrollLeft; weekScroll.top=sc.scrollTop; },{passive:true});
+  }
+  let weekScroll={key:'',left:0,top:0};
+
+  /* ==========================================================================
+     9. MAIN-AREA EVENTS (one delegated listener)
+     ========================================================================== */
+  $('main').addEventListener('click',e=>{
+    const a=e.target.closest('[data-act]');
+    if(a){
+      const act=a.dataset.act, id=a.dataset.id;
+      e.stopPropagation();
+      if(act==='prev') viewDate=addDays(viewDate,-1);
+      else if(act==='next') viewDate=addDays(viewDate,1);
+      else if(act==='prevw') viewDate=addDays(viewDate,-7);
+      else if(act==='nextw') viewDate=addDays(viewDate,7);
+      else if(act==='today') viewDate=today();
+      else if(act==='edit') return openEditor(id);
+      else if(act==='cancel'||act==='uncancel') return toggleCancel(id);
+      else if(act==='import') return openPanel('pImport');
+      else if(act==='add') return openEditor(null);
+      else if(act==='sample') return loadSample(a.dataset.k);
+      render(); return;
+    }
+    const it=e.target.closest('.it'); if(it) openEditor(it.dataset.id);
+  });
+  $('main').addEventListener('keydown',e=>{
+    if(e.key!=='Enter') return;
+    const it=e.target.closest('.it'); if(it&&e.target===it) openEditor(it.dataset.id);
+  });
+
+  /* Device detection. Not user-agent sniffing: we ask the browser whether the
+     main pointer is a finger (coarse) and how wide the widget itself is, which
+     also works inside the Notion mobile app's embed. The result is exposed as
+     <html data-device="phone|tablet|desktop" data-touch="1|0"> and in DEVICE. */
+  const _coarse=window.matchMedia('(pointer: coarse)');
+  const DEVICE={type:'desktop',touch:false};
+  function detectDevice(){
+    const w=$('app').clientWidth;
+    DEVICE.touch=_coarse.matches||navigator.maxTouchPoints>0&&!window.matchMedia('(pointer: fine)').matches;
+    DEVICE.type=w<=520?'phone':(DEVICE.touch||w<=820)?'tablet':'desktop';
+    document.documentElement.dataset.device=DEVICE.type;
+    document.documentElement.dataset.touch=DEVICE.touch?'1':'0';
+  }
+  _coarse.addEventListener('change',detectDevice);
+  let _rz; window.addEventListener('resize',()=>{ clearTimeout(_rz); _rz=setTimeout(()=>{ detectDevice(); render(); },120); });
+
+  /* Swipe left/right in the Today view to move between days (touch only).
+     Mostly-horizontal, quick swipes only, so normal scrolling is untouched. */
+  let sw=null;
+  $('main').addEventListener('touchstart',e=>{
+    if(S.view!=='today'||!D.classes.length||e.touches.length!==1) return;
+    const t=e.touches[0]; sw={x:t.clientX,y:t.clientY,t:Date.now()};
+  },{passive:true});
+  $('main').addEventListener('touchend',e=>{
+    if(!sw) return;
+    const t=e.changedTouches[0], dx=t.clientX-sw.x, dy=t.clientY-sw.y, dt=Date.now()-sw.t;
+    sw=null;
+    if(Math.abs(dx)<50||Math.abs(dy)>Math.abs(dx)*.6||dt>700) return;
+    viewDate=addDays(viewDate,dx<0?1:-1);
+    const m=$('main'); render();
+    m.style.setProperty('--dx',(dx<0?24:-24)+'px');
+    m.classList.remove('swiped'); void m.offsetWidth; m.classList.add('swiped');
+  },{passive:true});
+  function toggleCancel(id){
+    const ds=ymd(viewDate);
+    const i=D.cancels.findIndex(x=>x.id===id&&x.date===ds);
+    if(i>=0) D.cancels.splice(i,1); else D.cancels.push({date:ds,id});
+    // Drop cancellations older than 60 days so the list never grows forever.
+    const cut=ymd(addDays(today(),-60)); D.cancels=D.cancels.filter(x=>x.date>=cut);
+    save(); render();
+    toast(i>=0?'Class restored':'Cancelled for '+(sameDay(viewDate,today())?'today':fmtDate(viewDate)));
+  }
+
+  /* ==========================================================================
+     10. PANELS
+     ========================================================================== */
+  function openPanel(id){
+    document.querySelectorAll('.panel.open').forEach(p=>p.classList.remove('open'));
+    if(id==='pImport') prepImport();
+    if(id==='pHol') prepHol();
+    if(id==='pSet') prepSettings();
+    $(id).classList.add('open');
+  }
+  function closePanels(){ document.querySelectorAll('.panel.open').forEach(p=>p.classList.remove('open')); }
+  document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',closePanels));
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePanels(); });
+  $('importBtn').onclick=()=>openPanel('pImport');
+  $('addBtn').onclick=()=>openEditor(null);
+  $('holBtn').onclick=()=>openPanel('pHol');
+  $('gearBtn').onclick=()=>openPanel('pSet');
+  $('viewSeg').addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    S.view=b.dataset.v; save(); render();
+  });
+
+  /* Wire a segmented toggle: returns a setter that highlights a value. */
+  function tg(id,onPick){
+    const el=$(id);
+    el.addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; set(b.dataset.v); onPick(b.dataset.v); });
+    function set(v){ el.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.v===String(v))); }
+    return set;
+  }
+
+  /* ==========================================================================
+     11. CLASS EDITOR
+     ========================================================================== */
+  let edId=null, edColor='', edSticker='', edWeek='';
+  $('fType').innerHTML='<option value="">—</option>'+TYPES.map(t=>`<option>${t}</option>`).join('');
+  $('fDay').innerHTML=DAYS_FULL.map((d,i)=>`<option value="${i}">${d}</option>`).join('');
+  const setEdWeek=tg('fWeek',v=>{ edWeek=v; });
+
+  function drawEdColors(){
+    const custom=edColor&&!PALETTE.includes(edColor);
+    $('fColors').innerHTML=PALETTE.map(c=>`<div class="sw${c===edColor?' on':''}" style="--c:${c}" data-c="${c}"></div>`).join('')
+      +`<label class="sw-cu${custom?' on':''}" title="Custom colour"><input type="color" id="fColorIn" value="${isHex(edColor)?edColor:'#a78bfa'}"></label>`;
+    $('fColorIn').addEventListener('input',e=>{ edColor=e.target.value; drawEdColors(); });
+  }
+  $('fColors').addEventListener('click',e=>{ const s=e.target.closest('.sw'); if(s){ edColor=s.dataset.c; drawEdColors(); } });
+  function drawEdStickers(){
+    $('fStickers').innerHTML=`<button class="none${edSticker?'':' on'}" data-s="">None</button>`+STICKERS.map(s=>`<button class="${s===edSticker?'on':''}" data-s="${s}">${s}</button>`).join('');
+  }
+  $('fStickers').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b){ edSticker=b.dataset.s; drawEdStickers(); } });
+
+  function openEditor(id){
+    const c=id?D.classes.find(x=>x.id===id):null;
+    if(id&&!c) return;
+    edId=c?c.id:null;
+    delArmed=false; $('fDel').textContent='Delete';     // a half-tapped Delete never carries over to another class
+    $('edTitle').textContent=c?'Edit class':'Add a class';
+    $('fTitle').value=c?c.title:'';
+    $('fCode').value=c?c.code:'';
+    $('fType').value=c?c.type:'';
+    $('fDay').value=String(c?c.day:Math.min(dayIdx(viewDate),6));
+    $('fStart').value=c?c.start:'09:00';
+    $('fEnd').value=c?c.end:'10:00';
+    $('fRoom').value=c?c.room:'';
+    $('fTeacher').value=c?c.teacher:'';
+    $('fNote').value=c?c.note:'';
+    edColor=c?c.color:PALETTE[new Set(D.classes.map(x=>x.color)).size%PALETTE.length];
+    edSticker=c?c.sticker:'';
+    edWeek=c?c.week:'';
+    setEdWeek(edWeek);
+    $('fWeekWrap').hidden=!S.ab;
+    $('fDel').style.visibility=c?'visible':'hidden';
+    $('fErr').textContent='';
+    drawEdColors(); drawEdStickers();
+    openPanel('pEdit');
+    setTimeout(()=>{ if(!c) $('fTitle').focus(); },60);
+  }
+  $('fSave').onclick=()=>{
+    const r=cleanClass({
+      id:edId||undefined, title:$('fTitle').value, code:$('fCode').value, type:$('fType').value,
+      day:+$('fDay').value, start:$('fStart').value, end:$('fEnd').value, room:$('fRoom').value,
+      teacher:$('fTeacher').value, note:$('fNote').value, color:edColor, sticker:edSticker, week:edWeek
+    },0);
+    if(r.err){
+      // Friendlier wording for the form than the import validator uses.
+      const m=r.err.replace(/^Class 1( \([^)]*\))?: /,'');
+      $('fErr').textContent=/course name/.test(m)?'Enter a course name.':/ends before/.test(m)?'The end time must be after the start time.':/bad start/.test(m)?'Pick a start time.':/bad end/.test(m)?'Pick an end time.':m.charAt(0).toUpperCase()+m.slice(1);
+      return;
+    }
+    if(!r.c.color) r.c.color=PALETTE[0];
+    const i=D.classes.findIndex(x=>x.id===edId);
+    if(i>=0) D.classes[i]=r.c; else D.classes.push(r.c);
+    save(); closePanels(); render(); toast(i>=0?'Class updated':'Class added');
+  };
+  let delArmed=false;
+  $('fDel').onclick=()=>{
+    if(!delArmed){ delArmed=true; $('fDel').textContent='Tap again to delete'; setTimeout(()=>{ delArmed=false; $('fDel').textContent='Delete'; },2500); return; }
+    delArmed=false; $('fDel').textContent='Delete';
+    D.classes=D.classes.filter(x=>x.id!==edId);
+    D.cancels=D.cancels.filter(x=>x.id!==edId);
+    save(); closePanels(); render(); toast('Class deleted');
+  };
+  ['fTitle','fCode','fRoom','fTeacher','fNote'].forEach(id=>$(id).addEventListener('keydown',e=>{ if(e.key==='Enter') $('fSave').click(); }));
+
+  /* ==========================================================================
+     12. AI IMPORT
+     ========================================================================== */
+  const PROMPT=`You are converting a photo/screenshot of a class timetable into JSON for a timetable app.
+
+Look at the attached timetable and reply with ONLY one \`\`\`json code block, in exactly this shape:
+
+{
+  "classes": [
+    {"title": "General Chemistry", "code": "CHEM 111", "day": "Mon", "start": "09:00", "end": "10:30", "room": "B-204", "teacher": "Dr. Kim", "type": "Lecture", "week": ""}
+  ],
+  "holidays": [
+    {"name": "Winter break", "start": "2026-12-20", "end": "2027-01-04"}
+  ]
+}
+
+Rules:
+- One entry per class session. A course that meets on 3 days gets 3 entries.
+- "day" is one of: Mon, Tue, Wed, Thu, Fri, Sat, Sun.
+- "start" and "end" are 24-hour HH:MM times.
+- A session spanning several slots (e.g. a 2-hour lab) is ONE entry with the full start and end.
+- "type" is one of: Lecture, Lab, Tutorial, Seminar, Practical, Other.
+- "week" is "A" or "B" only if the timetable alternates between two weeks; otherwise "".
+- Use the course's full name for "title" if a legend/key shows it; otherwise copy the text as written.
+- Do NOT include breaks, lunch, or free periods.
+- If something is unreadable or not shown, use "" — never guess or invent.
+- "holidays": only dates actually shown in the image (YYYY-MM-DD); otherwise [].
+- Output nothing except the JSON code block.`;
+  let impParsed=null;
+  const setImpMode=tg('impMode',v=>{ S.impMode=v; save(); });
+  function prepImport(){
+    $('promptText').textContent=PROMPT;
+    setImpMode(S.impMode);
+    checkImport();
+  }
+  $('copyPrompt').onclick=()=>copyOrShow(PROMPT,'Prompt copied','The AI prompt');
+
+  /* Pull the JSON out of an AI reply: strips ``` fences and any chatter
+     around the object, tolerates trailing commas and smart quotes. */
+  function extractJson(text){
+    let s=String(text||'').trim();
+    const fence=/```(?:json)?\s*([\s\S]*?)```/i.exec(s); if(fence) s=fence[1].trim();
+    s=s.replace(/[“”]/g,'"').replace(/[‘’]/g,"'");
+    const ob=s.indexOf('{'), ab=s.indexOf('[');
+    let start=ob<0?ab:ab<0?ob:Math.min(ob,ab);
+    if(start<0) throw new Error('No timetable data found. Paste the AI\'s whole reply — the part in the ```json block. If the AI said it couldn\'t read the image, try a clearer photo.');
+    const close=s[start]==='{'?'}':']';
+    const end=s.lastIndexOf(close);
+    if(end<start) throw new Error('The JSON looks cut off — copy the whole reply.');
+    s=s.slice(start,end+1).replace(/,\s*([}\]])/g,'$1');
+    try{ return JSON.parse(s); }catch(e){ throw new Error('That isn\'t valid JSON ('+e.message.replace(/^JSON\.parse: /,'')+'). Ask the AI to "reply with only the JSON block".'); }
+  }
+  function checkImport(){
+    const txt=$('impText').value.trim();
+    $('impErr').textContent=''; $('impPreview').innerHTML=''; $('impGo').disabled=true; impParsed=null;
+    if(!txt) return;
+    let j;
+    try{ j=extractJson(txt); }catch(e){ $('impErr').textContent=e.message; return; }
+    const rawClasses=Array.isArray(j)?j:(Array.isArray(j.classes)?j.classes:null);
+    if(!rawClasses){ $('impErr').textContent='Couldn\'t find a "classes" list in the JSON.'; return; }
+    const errs=[], classes=[];
+    rawClasses.forEach((o,i)=>{ const r=cleanClass(o,i); if(r.err) errs.push(r.err); else classes.push(r.c); });
+    const holidays=(Array.isArray(j.holidays)?j.holidays:[]).map(cleanHoliday).filter(Boolean);
+    if(!classes.length){ $('impErr').innerHTML=(errs.length?errs.slice(0,6).map(esc).join('<br>'):'No classes found.'); return; }
+    impParsed={classes,holidays};
+    const byDay=[...classes].sort((a,b)=>a.day-b.day||toMin(a.start)-toMin(b.start));
+    let h=`<div class="ok" style="margin-bottom:8px">✓ ${classes.length} class${classes.length===1?'':'es'}${holidays.length?' + '+holidays.length+' holiday'+(holidays.length===1?'':'s'):''} ready to import</div>`;
+    if(errs.length) h+=`<div class="err" style="margin-bottom:8px">Skipped ${errs.length}: ${errs.slice(0,4).map(esc).join(' · ')}${errs.length>4?' …':''}</div>`;
+    h+='<div class="pv">'+byDay.map(c=>`<div class="pv-it"><span class="d">${DAYS[c.day]}</span><span class="t">${fmtT(toMin(c.start))}–${fmtT(toMin(c.end))}</span><b>${esc(c.title)}${c.room?' · '+esc(c.room):''}${c.week?' · Wk '+c.week:''}</b></div>`).join('')+'</div>';
+    $('impPreview').innerHTML=h;
+    $('impGo').disabled=false;
+  }
+  let impT; $('impText').addEventListener('input',()=>{ clearTimeout(impT); impT=setTimeout(checkImport,250); });
+  $('impGo').onclick=()=>{
+    if(!impParsed) return;
+    const {classes,holidays}=impParsed;
+    let dup=0;
+    if(S.impMode==='merge'){
+      // Skip classes that are already in the timetable (same course, day and
+      // time), so importing the same reply twice doesn't double everything.
+      const k=c=>[c.title.toLowerCase(),c.day,c.start,c.end,c.week].join('|');
+      const have=new Set(D.classes.map(k));
+      const fresh=classes.filter(c=>{ if(have.has(k(c))){ dup++; return false; } have.add(k(c)); return true; });
+      assignColors(fresh,D.classes);
+      D.classes=D.classes.concat(fresh);
+      classes.length=0; classes.push(...fresh);
+      const seen=new Set(D.holidays.map(h=>h.start+h.end+h.name));
+      holidays.forEach(h=>{ if(!seen.has(h.start+h.end+h.name)) D.holidays.push(h); });
+    }else{
+      assignColors(classes);
+      D.classes=classes; D.cancels=[];
+      if(holidays.length) D.holidays=holidays;
+    }
+    // Auto-enable Week A/B if the AI found an alternating timetable.
+    if(classes.some(c=>c.week)&&!S.ab){ S.ab=true; if(!S.abAnchor) S.abAnchor=ymd(mondayOf(today())); }
+    save(); $('impText').value=''; closePanels(); viewDate=today(); render();
+    toast(classes.length?'Imported '+classes.length+' class'+(classes.length===1?'':'es')+(dup?' · '+dup+' already there':'')+' 🎉':dup===1?'Nothing new — that class is already there':'Nothing new — all '+dup+' classes are already there');
+  };
+
+  /* ==========================================================================
+     13. HOLIDAYS
+     ========================================================================== */
+  let hKind='holiday';
+  const setHKind=tg('hKind',v=>{ hKind=v; });
+  function prepHol(){
+    setHKind(hKind); $('hErr').textContent='';
+    if(!$('hStart').value) $('hStart').value=ymd(today());
+    drawHolList();
+  }
+  function drawHolList(){
+    const t=ymd(today());
+    const list=[...D.holidays].sort((a,b)=>a.start.localeCompare(b.start));
+    $('hList').innerHTML=list.length?list.map(h=>{
+      const s=parseYmd(h.start), e=parseYmd(h.end);
+      const dt=h.start===h.end?fmtDate(s):fmtDate(s)+' → '+fmtDate(e);
+      return `<div class="hl-it${h.end<t?' past':''}"><span>${h.kind==='exam'?'📝':'🏖'}</span><span class="nm">${esc(h.name)}</span><span class="dt">${dt}</span><button class="ib" data-del="${h.id}" title="Remove"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>`;
+    }).join(''):'<div class="hint" style="text-align:center;padding:10px">No holidays yet. Add breaks and exam weeks so the widget knows when there are no classes.</div>';
+  }
+  $('hList').addEventListener('click',e=>{
+    const b=e.target.closest('[data-del]'); if(!b) return;
+    D.holidays=D.holidays.filter(h=>h.id!==b.dataset.del); save(); drawHolList(); render();
+  });
+  $('hAdd').onclick=()=>{
+    const h=cleanHoliday({name:$('hName').value||(hKind==='exam'?'Exam week':'Holiday'),start:$('hStart').value,end:$('hEnd').value||$('hStart').value,kind:hKind});
+    if(!h){ $('hErr').textContent='Pick a start date.'; return; }
+    if($('hEnd').value&&$('hEnd').value<$('hStart').value){ $('hErr').textContent='"To" is before "From".'; return; }
+    D.holidays.push(h); save();
+    $('hName').value=''; $('hEnd').value=''; $('hErr').textContent='';
+    drawHolList(); render(); toast('Added '+h.name);
+  };
+
+  /* ==========================================================================
+     14. SETTINGS
+     ========================================================================== */
+  function applyTheme(){
+    document.documentElement.setAttribute('data-theme',effectiveTheme());
+    document.documentElement.style.setProperty('--acc',isHex(S.accent)?S.accent:DEF.accent);
+    // CSS zoom on the app; percentage width/height still resolve against the
+    // viewport, so it keeps filling the embed at any zoom level.
+    $('app').style.zoom=S.zoom/100;
+  }
+  const setTheme=tg('sTheme',v=>{ S.theme=v; save(); applyTheme(); });
+  const setFmt=tg('sFmt',v=>{ S.fmt=v; save(); render(); });
+  const setWs=tg('sWs',v=>{ S.ws=+v; save(); render(); });
+  const setWe=tg('sWe',v=>{ S.weekends=v; save(); render(); });
+  const setAb=tg('sAb',v=>{
+    S.ab=v==='on';
+    if(S.ab&&!S.abAnchor) S.abAnchor=ymd(mondayOf(today()));
+    $('sAbNowWrap').style.visibility=S.ab?'visible':'hidden';
+    setAbNow(weekLabel(today()));
+    save(); render();
+  });
+  const setAbNow=tg('sAbNow',v=>{
+    const mon=mondayOf(today());
+    S.abAnchor=ymd(v==='A'?mon:addDays(mon,-7));
+    save(); render();
+  });
+  function drawAccents(){
+    const custom=!ACCENTS.includes(S.accent);
+    $('sAccent').innerHTML=ACCENTS.map(c=>`<div class="sw${c===S.accent?' on':''}" style="--c:${c}" data-c="${c}"></div>`).join('')
+      +`<label class="sw-cu${custom?' on':''}" title="Custom colour"><input type="color" id="sAccIn" value="${isHex(S.accent)?S.accent:DEF.accent}"></label>`;
+    $('sAccIn').addEventListener('input',e=>{ S.accent=e.target.value; save(); applyTheme(); drawAccents(); });
+  }
+  $('sAccent').addEventListener('click',e=>{ const s=e.target.closest('.sw'); if(s){ S.accent=s.dataset.c; save(); applyTheme(); drawAccents(); } });
+  $('sZoom').addEventListener('input',e=>{ S.zoom=+e.target.value; $('sZoomL').textContent=S.zoom+'%'; applyTheme(); });
+  $('sZoom').addEventListener('change',save);
+  $('sLog').addEventListener('change',e=>{
+    const v=e.target.value.trim();
+    if(v&&!/^https:\/\/\S+$/i.test(v)){ $('sLogErr').textContent='Use a full https:// link.'; return; }
+    $('sLogErr').textContent=''; S.logUrl=v; save(); render(); if(v) toast('Attendance link saved');
+  });
+  function prepSettings(){
+    setTheme(S.theme); setFmt(S.fmt); setWs(S.ws); setWe(S.weekends);
+    setAb(S.ab?'on':'off'); setAbNow(weekLabel(today())||'A');
+    $('sAbNowWrap').style.visibility=S.ab?'visible':'hidden';
+    $('sZoom').value=S.zoom; $('sZoomL').textContent=S.zoom+'%';
+    $('sLog').value=S.logUrl; $('sLogErr').textContent='';
+    $('sRestoreWrap').hidden=true; $('sRestoreErr').textContent='';
+    drawAccents(); disarm();
+  }
+  _mq.addEventListener('change',()=>{ if(S.theme==='auto') applyTheme(); });
+
+  /* Backup / restore (plain JSON text). */
+  function backupText(){ return JSON.stringify({app:'timetable',v:1,d:D,s:S}); }
+  $('sBackup').onclick=()=>copyOrShow(backupText(),'Backup copied — paste it somewhere safe','Your backup');
+  $('sRestoreBtn').onclick=()=>{ $('sRestoreWrap').hidden=!$('sRestoreWrap').hidden; };
+  $('sRestoreGo').onclick=()=>{
+    let j; try{ j=extractJson($('sRestore').value); }catch(e){ $('sRestoreErr').textContent=e.message; return; }
+    const d=sanitizeData(j.d||j);
+    if(!d.classes.length&&!d.holidays.length){ $('sRestoreErr').textContent='No timetable found in that backup.'; return; }
+    D=d; if(j.s&&typeof j.s==='object') S={...DEF,...j.s};
+    save(); applyTheme(); prepSettings(); render(); toast('Backup restored');
+  };
+
+  /* Two-step destructive actions. */
+  let armed=null;
+  function disarm(){ armed=null; $('sClear').textContent='Clear timetable'; $('sReset').textContent='Reset settings'; }
+  $('sClear').onclick=()=>{
+    if(armed!=='clear'){ disarm(); armed='clear'; $('sClear').textContent='Tap again — this deletes all classes & holidays'; return; }
+    D={classes:[],holidays:[],cancels:[]}; save(); disarm(); closePanels(); render(); toast('Timetable cleared');
+  };
+  $('sReset').onclick=()=>{
+    if(armed!=='reset'){ disarm(); armed='reset'; $('sReset').textContent='Tap again to reset settings'; return; }
+    S={...DEF}; save(); disarm(); applyTheme(); prepSettings(); render(); toast('Settings reset');
+  };
+
+  /* ==========================================================================
+     15. PORTABLE LINK  (#d=… holds the whole timetable, compressed if possible)
+     ========================================================================== */
+  function b64u(bytes){ let s=''; bytes.forEach(b=>s+=String.fromCharCode(b)); return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+  function unb64u(s){ s=s.replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4) s+='='; const bin=atob(s); return Uint8Array.from(bin,c=>c.charCodeAt(0)); }
+  async function pipe(bytes,stream){ return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer()); }
+  async function encodeData(obj){
+    const raw=new TextEncoder().encode(JSON.stringify(obj));
+    if(typeof CompressionStream!=='undefined'){ try{ return 'z'+b64u(await pipe(raw,new CompressionStream('deflate-raw'))); }catch(e){} }
+    return 'j'+b64u(raw);
+  }
+  async function decodeData(s){
+    const kind=s[0], bytes=unb64u(s.slice(1));
+    const raw=kind==='z'?await pipe(bytes,new DecompressionStream('deflate-raw')):bytes;
+    return JSON.parse(new TextDecoder().decode(raw));
+  }
+  /* Shorter links: internal ids are dropped (they're regenerated on load) and
+     one-day cancellations point at a class by its position instead. */
+  function packData(){
+    const idx=new Map(D.classes.map((c,i)=>[c.id,i]));
+    return {
+      classes:D.classes.map(({id,...c})=>c),
+      holidays:D.holidays.map(({id,...h})=>h),
+      cancels:D.cancels.filter(x=>idx.has(x.id)).map(x=>({date:x.date,i:idx.get(x.id)}))
+    };
+  }
+  function unpackData(d){
+    const out=sanitizeData({classes:d&&d.classes,holidays:d&&d.holidays,cancels:(d&&d.cancels||[]).filter(x=>x&&x.id)});
+    (d&&Array.isArray(d.cancels)?d.cancels:[]).forEach(x=>{
+      if(x&&Number.isInteger(x.i)&&out.classes[x.i]&&parseYmd(x.date)) out.cancels.push({date:x.date,id:out.classes[x.i].id});
+    });
+    return out;
+  }
+  $('sPortable').onclick=async()=>{
+    const {view,zoom,theme,accent,fmt,ws,weekends,ab,abAnchor,logUrl}=S;
+    const code=await encodeData({d:packData(),s:{view,zoom,theme,accent,fmt,ws,weekends,ab,abAnchor,logUrl}});
+    const url=location.origin+location.pathname+location.search+'#d='+code;
+    await copyOrShow(url,'Portable link copied — use it as your embed link','Your portable link');
+  };
+  /* On load: data in the link wins when this device has nothing saved yet,
+     or when the link was updated since it was last applied here. */
+  async function loadFromHash(hadLocal){
+    const m=/[#&]d=([A-Za-z0-9_-]+)/.exec(location.hash); if(!m) return;
+    let applied=''; try{ applied=localStorage.getItem(KEY+'_hash')||''; }catch(e){}
+    if(hadLocal&&applied===m[1]) return;
+    try{
+      const j=await decodeData(m[1]);
+      D=unpackData(j.d); if(j.s) S={...S,...j.s};
+      try{ localStorage.setItem(KEY+'_hash',m[1]); }catch(e){}
+      save(); applyTheme(); render();
+    }catch(e){ toast('Couldn\'t read the timetable in this link'); }
+  }
+
+  /* ==========================================================================
+     16. SAMPLE DATA
+     'btech'   — a hypothetical B.Tech CSE 3rd-semester timetable: Mon–Sat,
+                 50-minute periods, short break 10:40, lunch 12:30–1:20,
+                 afternoon labs, Saturday half day. All names are made up.
+     'general' — the template's Sample Semester courses.
+     Holiday dates are offsets from today so a sample always looks "live".
+     ========================================================================== */
+  const SAMPLES={
+    btech:{
+      label:'B.Tech CSE sample loaded',
+      rows:[
+        // Monday
+        ['Data Structures','CS201','Mon','09:00','09:50','LH-201','Dr. Anjali Sharma','Lecture','🧩'],
+        ['Discrete Mathematics','MA201','Mon','09:50','10:40','LH-201','Dr. Prakash Nair','Lecture','🧮'],
+        ['Object Oriented Programming (Java)','CS203','Mon','10:50','11:40','LH-201','Prof. Rohit Verma','Lecture','💻'],
+        ['Database Management Systems','CS205','Mon','11:40','12:30','LH-201','Dr. Sneha Iyer','Lecture','📊'],
+        ['Data Structures Lab','CS251','Mon','13:20','15:50','CL-2','Dr. Anjali Sharma','Lab','🧪','Bring lab record'],
+        // Tuesday
+        ['Database Management Systems','CS205','Tue','09:00','09:50','LH-201','Dr. Sneha Iyer','Lecture','📊'],
+        ['Digital Logic & Computer Organization','CS207','Tue','09:50','10:40','LH-201','Prof. Kiran Rao','Lecture','⚙️'],
+        ['Data Structures','CS201','Tue','10:50','11:40','LH-201','Dr. Anjali Sharma','Lecture','🧩'],
+        ['Environmental Studies','EVS201','Tue','11:40','12:30','LH-105','Ms. Neha Kapoor','Lecture','🌍'],
+        ['Java Programming Lab','CS253','Tue','13:20','15:50','CL-3','Prof. Rohit Verma','Lab','☕','Upload code to the lab portal'],
+        // Wednesday
+        ['Object Oriented Programming (Java)','CS203','Wed','09:00','09:50','LH-201','Prof. Rohit Verma','Lecture','💻'],
+        ['Data Structures','CS201','Wed','09:50','10:40','LH-201','Dr. Anjali Sharma','Lecture','🧩'],
+        ['Discrete Mathematics','MA201','Wed','10:50','11:40','LH-201','Dr. Prakash Nair','Lecture','🧮'],
+        ['Digital Logic & Computer Organization','CS207','Wed','11:40','12:30','LH-201','Prof. Kiran Rao','Lecture','⚙️'],
+        ['Discrete Mathematics','MA201','Wed','13:20','14:10','TR-3','Dr. Prakash Nair','Tutorial','🧮','Tutorial sheet 4 due'],
+        ['Database Management Systems','CS205','Wed','14:10','15:00','LH-201','Dr. Sneha Iyer','Lecture','📊'],
+        // Thursday
+        ['Digital Logic & Computer Organization','CS207','Thu','09:00','09:50','LH-201','Prof. Kiran Rao','Lecture','⚙️'],
+        ['Object Oriented Programming (Java)','CS203','Thu','09:50','10:40','LH-201','Prof. Rohit Verma','Lecture','💻'],
+        ['Database Management Systems','CS205','Thu','10:50','11:40','LH-201','Dr. Sneha Iyer','Lecture','📊'],
+        ['Discrete Mathematics','MA201','Thu','11:40','12:30','LH-201','Dr. Prakash Nair','Lecture','🧮'],
+        ['DBMS Lab','CS255','Thu','13:20','15:50','CL-1','Dr. Sneha Iyer','Lab','📝','SQL queries: practical 6'],
+        // Friday
+        ['Data Structures','CS201','Fri','09:00','09:50','LH-201','Dr. Anjali Sharma','Lecture','🧩'],
+        ['Database Management Systems','CS205','Fri','09:50','10:40','LH-201','Dr. Sneha Iyer','Lecture','📊'],
+        ['Object Oriented Programming (Java)','CS203','Fri','10:50','11:40','LH-201','Prof. Rohit Verma','Lecture','💻'],
+        ['Digital Logic & Computer Organization','CS207','Fri','11:40','12:30','LH-201','Prof. Kiran Rao','Lecture','⚙️'],
+        ['Environmental Studies','EVS201','Fri','13:20','14:10','LH-105','Ms. Neha Kapoor','Lecture','🌍'],
+        ['Data Structures','CS201','Fri','14:10','15:00','TR-3','Dr. Anjali Sharma','Tutorial','🧩'],
+        // Saturday (half day)
+        ['Digital Logic Lab','CS257','Sat','09:00','10:40','DL-Lab','Prof. Kiran Rao','Lab','🔬'],
+        ['Soft Skills & Communication','HS201','Sat','10:50','12:30','Seminar Hall','Ms. Priya Menon','Seminar','🗣️']
+      ],
+      holidays:[
+        // Offsets from this week's Monday: exams Mon–Sat two weeks out, then a break.
+        {name:'Mid-semester exams',from:14,to:19,kind:'exam',week:true},
+        {name:'Winter break',from:21,to:27,kind:'holiday',week:true}
+      ]
+    },
+    general:{
+      label:'Sample timetable loaded',
+      rows:[
+        ['Human Anatomy & Physiology','BIO 210','Mon','09:00','10:30','Sci-101','Dr. Priya Nair','Lecture','🩺'],
+        ['General Chemistry','CHEM 111','Mon','11:00','12:30','Chem-2','Dr. Marcus Kim','Lecture','🧪'],
+        ['Data Structures & Algorithms','CS 210','Mon','14:00','16:00','Lab-4','Prof. Owen Faircroft','Lab','💻','Bring laptop charger'],
+        ['Studio Art I','ART 130','Tue','10:00','12:00','Studio B','Prof. Lucia Bennett','Practical','🎨'],
+        ['Academic Writing Seminar','ENG 150','Tue','13:30','15:00','Hum-12','Prof. Ilsa Whitmore','Seminar','✏️'],
+        ['Human Anatomy & Physiology','BIO 210','Wed','09:00','10:30','Sci-101','Dr. Priya Nair','Lecture','🩺'],
+        ['General Chemistry','CHEM 111','Wed','11:00','13:00','Chem Lab','Dr. Marcus Kim','Lab','🧪','Lab coat + goggles'],
+        ['Data Structures & Algorithms','CS 210','Thu','09:30','11:00','CS-3','Prof. Owen Faircroft','Lecture','💻'],
+        ['Studio Art I','ART 130','Thu','13:00','15:00','Studio B','Prof. Lucia Bennett','Practical','🎨'],
+        ['Human Anatomy & Physiology','BIO 210','Fri','10:00','11:30','Sci-101','Dr. Priya Nair','Tutorial','🩺'],
+        ['Academic Writing Seminar','ENG 150','Fri','13:00','14:30','Hum-12','Prof. Ilsa Whitmore','Seminar','✏️']
+      ],
+      holidays:[{name:'Mid-semester break',from:18,to:24,kind:'holiday'}]
+    }
+  };
+  function loadSample(kind){
+    const smp=SAMPLES[kind]||SAMPLES.btech;
+    const raw=smp.rows.map(([title,code,day,start,end,room,teacher,type,sticker,note])=>({title,code,day,start,end,room,teacher,type,sticker,note:note||''}));
+    const t=today();
+    const hols=smp.holidays.map(h=>{ const base=h.week?mondayOf(t):t; return {name:h.name,start:ymd(addDays(base,h.from)),end:ymd(addDays(base,h.to)),kind:h.kind}; });
+    D=sanitizeData({classes:raw,holidays:hols});
+    viewDate=today();
+    save(); render(); toast(smp.label);
+  }
+
+  /* ==========================================================================
+     17. TICKER & INIT
+     ========================================================================== */
+  function tick(){
+    if(document.querySelector('.panel.open')) return;      // don't redraw under an open panel
+    const t=ymd(today());
+    if(t!==lastToday){ if(ymd(viewDate)===lastToday) viewDate=today(); lastToday=t; }
+    render();
+  }
+  setInterval(tick,20000);
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) tick(); });
+
+  const hadLocal=loadLocal();
+  applyTheme();
+  detectDevice();
+  render();
+  loadFromHash(hadLocal);
+  </script>
+</body>
+</html>
