@@ -61,7 +61,9 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
   - **Theme** — Light or Dark
   - **Format** — 12 HR or 24 HR
   - **Display** — Day & Date, Date only, Day only, or None
-  - **Zoom** — 50 – 150 % scale
+  - **Zoom** — 50 – 150 % scale; the clock always shrinks to fit its embed, so the tiles, gear and date are never cut off
+  - **Tile presets keep the numbers readable** — picking a light tile (Parchment) under white numbers, or a dark tile under black ones, switches the numbers to black / white
+  - **Adapts to the device** — works in the Notion mobile app: bigger tap targets on touchscreens and a settings popup that fits small screens; the time re-syncs instantly when you come back to the tab
   - Responsive layout for narrow embeds; gear icon auto-adapts to tile brightness
 
 - `widget-pomodoro.html` — Pomodoro timer with focus/break cycles and session tracking. Settings include:
