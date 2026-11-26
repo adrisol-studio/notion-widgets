@@ -18,15 +18,21 @@
     • Multi-city: save up to 5 cities; switch via tabs or the Settings panel.
       Each city's data is cached so switching back is instant.
     • Inline-SVG weather icons (animated via CSS) — no image files.
-    • Settings persist to localStorage ('ww2'). Refresh every 20 min.
+    • Settings persist to localStorage ('ww2'). Refresh every 20 min; a failed
+      refresh keeps the last weather on screen.
+    • Adapts to the device: shrinks to fit any embed size (gear never cut off),
+      <html data-device/data-touch>, bigger tap targets on touch, narrower tiles
+      on phones, swipe left/right to switch saved cities.
 
     SECTIONS
       <style>  reset/card, gear, city tabs, icons/animation, current weather,
-               hourly strip, forecast grid, settings popup + all controls.
+               hourly strip, forecast grid, settings popup + all controls,
+               touchscreen sizes.
       <body>   widget card + settings popup.
       <script> constants/state · icon builders · geocode · consensus fetch ·
-               code resolution · rendering · ambient · apply · popup · location
-               search · multi-city · colour pickers · toggles · init.
+               code resolution · rendering · ambient · device/fit · apply ·
+               popup · location search · multi-city · colour pickers · toggles
+               · swipe · init.
     ============================================================================
   -->
 
@@ -105,7 +111,7 @@
     .compact-hilo .lo { opacity: .6; }
 
     /* ===== Hourly strip (scrollbar hidden — paged by the .hr-nav arrows) ===== */
-    .hr { display: flex; gap: 8px; height: 92px; overflow-x: auto; width: 0; min-width: 100%; scrollbar-width: none; }
+    .hr { display: flex; gap: var(--gap, 8px); height: 92px; overflow-x: auto; width: 0; min-width: 100%; scrollbar-width: none; }
     .hr::-webkit-scrollbar { display: none; }
 
     /* Arrow buttons live in the wrapper's 24px padding gutters, never over a tile.
@@ -127,7 +133,7 @@
     .hr-temp { font-size: 12px; font-weight: 700; }
 
     /* ===== Daily forecast grid ===== */
-    .fc { display: flex; gap: 8px; margin-top: 16px; width: 0; min-width: 100%; }
+    .fc { display: flex; gap: var(--gap, 8px); margin-top: 16px; width: 0; min-width: 100%; }
     .fc-day { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px 4px; border-radius: 10px; background: rgba(128,128,128,.07); transition: background .3s; min-width: 0; min-height: 92px; }
     .fc-name { font-family: 'Roboto Condensed', sans-serif; font-weight: 700; font-size: 13px; letter-spacing: .04em; opacity: .85; white-space: nowrap; }
     .fc-date { font-size: 9px; font-weight: 600; opacity: .5; margin-top: -3px; }
@@ -174,7 +180,7 @@
     /* ===== Settings popup ===== */
     .ov { position: fixed; inset: 0; background: rgba(0,0,0,.2); z-index: 200; opacity: 0; pointer-events: none; transition: opacity .2s; }
     .ov.open { opacity: 1; pointer-events: auto; }
-    .pop { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%) scale(.93); width: 316px; max-height: 90vh; overflow-y: auto; border-radius: 14px; z-index: 210; padding: 20px; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; font-family: 'Inter', sans-serif; }
+    .pop { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%) scale(.93); width: min(316px, calc(100vw - 16px)); max-height: 90vh; overflow-y: auto; border-radius: 14px; z-index: 210; padding: 20px; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; font-family: 'Inter', sans-serif; }
     .pop.open { opacity: 1; pointer-events: auto; transform: translate(-50%,-50%) scale(1); }
     .pop::-webkit-scrollbar { width: 4px; }
     .pop::-webkit-scrollbar-track { background: transparent; }
@@ -282,6 +288,37 @@
     .zs::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; cursor: pointer; border: 2px solid; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
     .zl { font-size: 11px; font-weight: 600; min-width: 34px; text-align: center; }
     .rst { display: block; margin-top: 14px; font-size: 11px; text-align: center; cursor: pointer; transition: color .15s; }
+
+    /* ===== Touchscreens (phones, tablets, Notion mobile app) ===== */
+    button, .tb, .swt, .sw, .rst, .loc-item, #retryBtn { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    .pop { overscroll-behavior: contain; }
+    @media (pointer: coarse) {
+      /* Bigger tap targets (~32px+). The gear has no hover state, so it stays visible. */
+      .gear { width: 34px; height: 34px; top: 0; left: 0; }
+      .gear svg { width: 18px; height: 18px; }
+      .city-tab { padding: 8px 14px; font-size: 13px; }
+      .back-btn { padding: 6px 12px; font-size: 12px; }
+      #retryBtn { padding: 9px 16px; font-size: 13px; }
+      .pop-x { width: 34px; height: 34px; }
+      .tb { padding: 10px 6px; font-size: 12px; }
+      .swt { width: 44px; height: 26px; border-radius: 13px; }
+      .swt::after { width: 20px; height: 20px; }
+      .swt.on::after { transform: translateX(18px); }
+      .swr { padding: 8px 0; }
+      .sw { width: 32px; height: 32px; }
+      .loc-go { width: 40px; height: 40px; }
+      .loc-item { padding: 12px; font-size: 13px; }
+      .city-switch { padding: 7px 12px; font-size: 11px; }
+      .city-x { width: 30px; height: 30px; }
+      .zs { height: 6px; }
+      .zs::-webkit-slider-thumb { width: 24px; height: 24px; }
+      .rst { padding: 10px 0; margin-top: 6px; font-size: 12px; }
+      /* 16px stops iOS Safari from zooming the page when a field is focused. */
+      .loc-input { height: 40px; font-size: 16px; }
+      .cpk-hex-input { height: 36px; font-size: 16px; }
+    }
+    @keyframes swipeIn { from { opacity: 0; transform: translateX(var(--dx, 0)); } to { opacity: 1; transform: none; } }
+    .swiped { animation: swipeIn .22s ease-out; }
   </style>
 </head>
 
@@ -377,7 +414,8 @@
     ambient:false, hourly:true, aqi:true, feels:true, rain:true, fcPop:false,
     dates:false, cond:true, anim:true, mono:false, zoom:100,
     hourlyExpanded:false,
-    savedLocations:[], activeIdx:0, _lastEffective:null
+    savedLocations:[], activeIdx:0, _lastEffective:null,
+    _themeMig:1                         // fresh saves are already "post-Auto"; see load()
   };
   let S={...DEF};
 
@@ -408,7 +446,9 @@
         S={...DEF,...p};
         // One-time migration: saves from before Auto existed didn't have this
         // flag, so force Auto to be the real default even for a returning save.
-        if(!p._themeMig){ S.theme='auto'; S._lastEffective=null; }
+        // Remember which theme the old colours were made for, so init re-snaps
+        // them if the system theme differs (else dark colours under light Auto).
+        if(!p._themeMig){ S._lastEffective=(p.theme==='dark'||p.theme==='light')?p.theme:null; S.theme='auto'; }
         S._themeMig=1;
       }
     }catch(e){}
@@ -576,6 +616,9 @@
     }catch(e){
       if(reqLat!==S.lat||reqLon!==S.lon) return;    // stale failed request — ignore
       setLoading(false);
+      // A failed background refresh keeps the weather already on screen; the
+      // 20-min timer (or the 'online' event) tries again later.
+      if(DATA&&cache[k]&&cache[k].DATA===DATA) return;
       const isFile=location.protocol==='file:';
       const msg=isFile
         ?'🗂️ Open on a web server to load live weather.<br><small style="opacity:.6;font-size:11px">Local files can\'t fetch APIs (CORS). Push to GitHub Pages or run <code>npx serve .</code></small>'
@@ -680,7 +723,8 @@
 
     // AQI + rain chips.
     let chips='';
-    if(S.rain&&popToday!=null&&rainToday!=null&&rainToday>=2) chips+=`<span class="chip">☔ ${popToday}%</span>`;
+    // Percentages are medians of 5 models, so they can be halves (62.5) — round them.
+    if(S.rain&&popToday!=null&&rainToday!=null&&rainToday>=2) chips+=`<span class="chip">☔ ${Math.round(popToday)}%</span>`;
     if(S.aqi&&AQ&&AQ.current&&AQ.current.us_aqi!=null){ const b=aqiBand(AQ.current.us_aqi); chips+=`<span class="chip"><span class="dot" style="background:${b.c}"></span>AQI ${Math.round(AQ.current.us_aqi)} · ${b.l}</span>`; }
 
     // Hourly toggle button (only shown when hourly strip is disabled in settings).
@@ -738,7 +782,7 @@
         ${S.dates?`<div class="fc-date">${dstr}</div>`:''}
         <div class="fc-icon">${iconSVG(di.t,true)}</div>
         <div class="fc-temp"><span class="fc-hi">${Math.round(day.temperature_2m_max[i])}°</span><span class="fc-lo">${Math.round(day.temperature_2m_min[i])}°</span></div>
-        ${S.fcPop&&pop!=null&&rainSum!=null&&rainSum>=2?`<div class="fc-pop">☔${pop}%</div>`:''}
+        ${S.fcPop&&pop!=null&&rainSum!=null&&rainSum>=2?`<div class="fc-pop">☔${Math.round(pop)}%</div>`:''}
       </div>`;
     }
     dailyHtml+='</div>';
@@ -760,6 +804,7 @@
       const sx=(tf&&tf!=='none')?new DOMMatrixReadOnly(tf).a:1;
       lEl.style.left=`${tEl.offsetWidth*(1-sx)/2}px`;
     }
+    fitTabs(); fitScale();
 
     // Update the local date + clock in the location name every 15 s.
     // Must rewrite the whole stamp, not just the time, or the date gets wiped.
@@ -775,7 +820,7 @@
     window._hrRO?.disconnect();                    // strip is rebuilt every render — drop the stale observer
     if(hs){
       const prev=c.querySelector('#hrPrev'), next=c.querySelector('#hrNext');
-      const step=()=>hs.clientWidth+8;
+      const step=()=>hs.clientWidth+tileGap();
       const upd=()=>{
         const max=hs.scrollWidth-hs.clientWidth;
         prev.classList.toggle('can', hs.scrollLeft>1);
@@ -810,12 +855,64 @@
       document.body.classList.remove('ambient');
     }
   }
+  /* Device detection. Not user-agent sniffing: we ask the browser whether the
+     main pointer is a finger (coarse) and how wide the embed itself is, which
+     also works inside the Notion mobile app. Exposed as
+     <html data-device="phone|tablet|desktop" data-touch="1|0"> and in DEVICE.
+     "phone" starts at 420px (not 520) because 520px is the desktop embed size. */
+  const _coarse=window.matchMedia('(pointer: coarse)');
+  const DEVICE={type:'desktop',touch:false};
+  function detectDevice(){
+    const w=document.getElementById('cont').clientWidth||window.innerWidth;
+    DEVICE.touch=_coarse.matches||navigator.maxTouchPoints>0&&!window.matchMedia('(pointer: fine)').matches;
+    DEVICE.type=w<=420?'phone':(DEVICE.touch||w<=820)?'tablet':'desktop';
+    document.documentElement.dataset.device=DEVICE.type;
+    document.documentElement.dataset.touch=DEVICE.touch?'1':'0';
+  }
+  // Phones get slightly narrower tiles so 5-7 days fit without shrinking the text much.
+  function tileW(){ return DEVICE.type==='phone'?44:52; }
+  function tileGap(){ return DEVICE.type==='phone'?6:8; }
+
+  /* Shrink-to-fit: the zoom slider sets the preferred size, but the widget never
+     grows past the embed, so the gear and the edges can't be cut off in a short
+     or narrow embed (e.g. 7 days in a 300px column, or the hourly strip in a
+     300px-tall block). Uses layout sizes, which transforms don't change, so the
+     ResizeObserver below can't loop. */
+  function fitScale(){
+    const w=document.getElementById('wrapper'), c=document.getElementById('cont');
+    const want=S.zoom/100*BASE_SCALE;
+    const ow=w.offsetWidth, oh=w.offsetHeight;
+    const fit=(ow&&oh)?Math.min((c.clientWidth-4)/ow,(c.clientHeight-4)/oh):want;
+    w.style.transform=`scale(${Math.max(.2,Math.min(want,fit))})`;
+  }
+  /* The city tabs float top-right, below the city/date line; reserve room beside
+     and under them so they never cover the condition text, the chips or the
+     hourly strip (5 cities = 3 rows). The city/date line itself sits above the
+     tabs, so it keeps the full width. */
+  function fitTabs(){
+    const t=document.getElementById('cityTabs'), now=document.querySelector('#content .now');
+    if(!now) return;
+    const rows=now.querySelectorAll('.temp-row, .meta-row');
+    // A bottom margin (not min-height) makes the room under the tabs, because
+    // .now centres its children vertically and a taller box would move the text.
+    rows.forEach(r=>r.style.paddingRight=''); now.style.marginBottom='';
+    if(!t.offsetWidth) return;                                   // <2 cities, or Compact
+    const pad=Math.max(0,t.offsetWidth-6)+'px';                   // tabs sit 16px into the 24px gutter
+    rows.forEach(r=>r.style.paddingRight=pad);
+    const loc=now.querySelector('.loc');
+    if(loc) t.style.top=Math.max(34,loc.offsetTop+loc.offsetHeight+6)+'px';   // start under the city/date line
+    // Collapses with the strip's 16px top margin, so only bigger values matter.
+    const extra=t.offsetTop+t.offsetHeight+12-(now.offsetTop+now.offsetHeight);
+    if(extra>16) now.style.marginBottom=extra+'px';
+  }
+
   function applyAll(){
     const r=document.documentElement.style;
-    document.getElementById('wrapper').style.transform=`scale(${S.zoom/100*BASE_SCALE})`;
-    const n=parseInt(S.days);
-    r.setProperty('--hr-w',`calc((100% - ${(n-1)*8}px) / ${n})`);
-    r.setProperty('--day-w',`${n*52+(n-1)*8+48}px`);
+    detectDevice();
+    const n=parseInt(S.days), tw=tileW(), gap=tileGap();
+    r.setProperty('--gap',`${gap}px`);
+    r.setProperty('--hr-w',`calc((100% - ${(n-1)*gap}px) / ${n})`);
+    r.setProperty('--day-w',`${n*tw+(n-1)*gap+48}px`);
     const b=document.body;
     b.classList.toggle('lay-compact',S.layout==='compact');
     b.classList.toggle('lay-full',S.layout!=='compact');
@@ -825,7 +922,17 @@
     p.classList.remove('pop-light','pop-dark');
     p.classList.add(effectiveTheme()==='dark'?'pop-dark':'pop-light');
     applyAmbient();
+    fitTabs(); fitScale();
   }
+  // Re-fit when the embed is resized (Notion block drag, phone rotation) or the
+  // content changes size; re-detect the device when its width class changes.
+  new ResizeObserver(()=>{
+    const was=DEVICE.type; detectDevice();
+    if(DEVICE.type!==was) applyAll(); else fitScale();
+  }).observe(document.getElementById('cont'));
+  // Web fonts arriving late change text sizes, so re-place the tabs as well.
+  new ResizeObserver(()=>{ fitTabs(); fitScale(); }).observe(document.getElementById('wrapper'));
+  _coarse.addEventListener('change',applyAll);
 
   /* ==========================================================================
      10. SETTINGS POPUP
@@ -865,7 +972,13 @@
   /* ==========================================================================
      12. MULTI-CITY MANAGEMENT
      ========================================================================== */
-  function abbr(place){ return (String(place||'').replace(/[^a-zA-Z]/g,'').slice(0,3)||'CTY').toUpperCase(); }
+  /* Tab label: initials for multi-word names (New York → NY, Rio de Janeiro → RDJ),
+     else the first 3 letters. \p{L} keeps accented / non-Latin letters (Zürich → ZÜR). */
+  function abbr(place){
+    const words=String(place||'').split(/[\s\-]+/).map(w=>w.replace(/[^\p{L}]/gu,'')).filter(Boolean);
+    const s=words.length>1?words.map(w=>w[0]).join('').slice(0,3):(words[0]||'').slice(0,3);
+    return (s||'CTY').toUpperCase();
+  }
 
   // Guarantee at least one saved city and keep the top-level lat/lon/place in sync.
   function ensureCities(){
@@ -913,9 +1026,10 @@
   function renderTabs(){
     const el=document.getElementById('cityTabs'); if(!el) return;
     const list=S.savedLocations||[];
-    if(list.length<2){ el.innerHTML=''; return; }   // tabs only appear with 2+ cities
+    if(list.length<2){ el.innerHTML=''; fitTabs(); return; }   // tabs only appear with 2+ cities
     el.innerHTML=list.map((c,i)=>`<button class="city-tab${i===S.activeIdx?' on':''}" data-i="${i}" title="${esc(c.place)}">${esc(abbr(c.place))}</button>`).join('');
     el.querySelectorAll('.city-tab').forEach(b=>b.addEventListener('click',()=>{ const i=parseInt(b.dataset.i); if(i!==S.activeIdx) switchCity(i); }));
+    fitTabs();
   }
   function renderCitiesList(){
     const el=document.getElementById('savedCities'); if(!el) return;
@@ -1059,6 +1173,31 @@
     zSlider.value=S.zoom; zLabel.textContent=S.zoom+'%';
     renderSwatches(); hlAll(); updateLocCur(); renderTabs(); renderCitiesList();
   }
+
+  /* Swipe left/right on the widget to move between saved cities (touch only).
+     Mostly-horizontal, quick swipes only; swipes on the hourly strip scroll it
+     instead. Also works in Compact, where the city tabs are hidden. */
+  let swp=null;
+  const contEl=document.getElementById('cont');
+  contEl.addEventListener('touchstart',e=>{
+    swp=null;
+    if((S.savedLocations||[]).length<2||e.touches.length!==1||e.target.closest('.hr, .gear, .city-tabs')) return;
+    const t=e.touches[0]; swp={x:t.clientX,y:t.clientY,t:Date.now()};
+  },{passive:true});
+  contEl.addEventListener('touchend',e=>{
+    if(!swp) return;
+    const t=e.changedTouches[0], dx=t.clientX-swp.x, dy=t.clientY-swp.y, dt=Date.now()-swp.t;
+    swp=null;
+    if(Math.abs(dx)<50||Math.abs(dy)>Math.abs(dx)*.6||dt>700) return;
+    const n=S.savedLocations.length;
+    switchCity((S.activeIdx+(dx<0?1:-1)+n)%n);
+    const c=document.getElementById('content');
+    c.style.setProperty('--dx',(dx<0?24:-24)+'px');
+    c.classList.remove('swiped'); void c.offsetWidth; c.classList.add('swiped');
+  },{passive:true});
+
+  // Back online after a dropped connection → refresh straight away.
+  window.addEventListener('online',()=>fetchWeather());
 
   /* ==========================================================================
      15. INIT

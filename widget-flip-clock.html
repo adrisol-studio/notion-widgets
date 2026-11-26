@@ -14,6 +14,9 @@
     • Settings popup (gear) controls font, layout, theme, tile colour (presets +
       custom), number/date colours, flip motion style, 12/24h, date display, zoom.
       Settings persist to localStorage ('flipclock-v1').
+    • Adapts to the device: shrinks to fit any embed (zoom never clips the
+      tiles, gear or date), <html data-device/data-touch>, bigger tap targets
+      on touch. Ticks on the minute and re-syncs when the tab becomes visible.
 
     HOW THE FLIP WORKS (see the .flap CSS + flipTile() in the script)
       Each tile has two STATIC halves (.half top/bot) showing the current digit.
@@ -23,9 +26,10 @@
       animation the flaps are removed and the static halves show the new digit.
 
     SECTIONS
-      <style>   variables, clock tiles + flip animation, popup + all controls.
+      <style>   variables, clock tiles + flip animation, popup + all controls,
+                touchscreen sizes.
       <body>    clock markup + the settings popup.
-      <script>  constants/state · palettes/fonts · responsive · motion · clock
+      <script>  constants/state · palettes/fonts · responsive/fit/device · motion · clock
                 rendering · theming · presets · popup · colour pickers · toggles
                 · init.
     ============================================================================
@@ -323,7 +327,7 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%) scale(.93);
-      width: 310px;
+      width: min(310px, calc(100vw - 16px));
       max-height: 88vh;
       overflow-y: auto;
       border-radius: 14px;
@@ -425,6 +429,27 @@
     .fb { padding: 6px 10px; border-radius: 7px; font-size: 11px; font-weight: 600; cursor: pointer; border: 1.5px solid transparent; transition: border-color .15s, background .15s; background: none; }
     .pop-light .fb { color: #444; border-color: #e0e0e0; } .pop-light .fb:hover { background: #f3f3f3; } .pop-light .fb.on { border-color: #222; background: #f5f5f5; color: #111; }
     .pop-dark .fb { color: #888; border-color: #333; } .pop-dark .fb:hover { background: #2a2a2a; } .pop-dark .fb.on { border-color: #aaa; background: #2a2a2a; color: #eee; }
+
+    /* ===== Touchscreens (phones, tablets, Notion mobile app) ===== */
+    button, .tb, .fb, .pc, .sw, .rst { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    .pop { overscroll-behavior: contain; }
+    @media (pointer: coarse) {
+      /* Bigger tap targets. The gear has no hover state on touch, so it stays visible. */
+      .gear { width: 32px; height: 32px; top: 2px; left: 2px; }
+      .gear svg { width: 17px; height: 17px; }
+      .pop-x { width: 34px; height: 34px; }
+      .tb { padding: 11px 6px; font-size: 12px; }
+      .row2 .tb, #gTheme .tb { font-size: 11.5px; padding: 11px 2px; }   /* half-width rows: keep "Compact" whole */
+      .fb { padding: 9px 12px; font-size: 12px; }
+      .sw { width: 32px; height: 32px; }
+      .pc-swatch { height: 48px; }
+      .pc-name { font-size: 10px; padding: 6px 3px; }
+      .zs { height: 6px; }
+      .zs::-webkit-slider-thumb { width: 24px; height: 24px; }
+      .rst { padding: 10px 0; margin-top: 6px; font-size: 12px; }
+      /* 16px stops iOS Safari from zooming the page when a field is focused. */
+      .cpk-hex-input { height: 36px; font-size: 16px; }
+    }
   </style>
 </head>
 
@@ -502,7 +527,8 @@
   const DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-  const DEF={mode:'standard',theme:'auto',tile:'#2a2a2a',timeText:'#ffffff',dateText:'#111111',bg:'#ffffff',format:'24',display:'both',zoom:100,preset:null,font:'Anton',motion:'smooth',_lastEffective:null};
+  const DEF={mode:'standard',theme:'auto',tile:'#2a2a2a',timeText:'#ffffff',dateText:'#111111',bg:'#ffffff',format:'24',display:'both',zoom:100,preset:null,font:'Anton',motion:'smooth',_lastEffective:null,
+             _themeMig:1};   // fresh saves are already "post-Auto"; see load()
   let S={...DEF};
   let currentBreak='large';                 // 'large' | 'medium' (narrow embeds)
 
@@ -526,7 +552,9 @@
         if(S.motion==='slow') S.motion='smooth';               // retired motion → default
         // One-time migration: saves from before Auto existed didn't have this
         // flag, so force Auto to be the real default even for a returning save.
-        if(!p._themeMig){ S.theme='auto'; S._lastEffective=null; }
+        // Remember which theme the old colours were made for, so init re-snaps
+        // them if the system theme differs (else dark colours under light Auto).
+        if(!p._themeMig){ S._lastEffective=(p.theme==='dark'||p.theme==='light')?p.theme:null; S.theme='auto'; }
         S._themeMig=1;
       }
     }catch(e){}
@@ -569,16 +597,19 @@
   const FONT_MAP={
     'Anton':          {family:"'Anton','Roboto Condensed',sans-serif",      size:'82px', ls:'0.02em'},
     'Bebas Neue':     {family:"'Bebas Neue','Roboto Condensed',sans-serif", size:'96px', ls:'0.02em'},
-    'Oswald':         {family:"'Oswald','Roboto Condensed',sans-serif",     size:'86px', ls:'0.02em'},
-    'JetBrains Mono': {family:"'JetBrains Mono',monospace",                 size:'76px', ls:'-0.01em'},
+    'Oswald':         {family:"'Oswald','Roboto Condensed',sans-serif",     size:'86px', ls:'0.02em', cmp:'80px'},
+    'JetBrains Mono': {family:"'JetBrains Mono',monospace",                 size:'76px', ls:'-0.01em', cmp:'74px'},
     'Squada One':     {family:"'Squada One','Roboto Condensed',sans-serif", size:'88px', ls:'0.02em'},
-    'Chakra Petch':   {family:"'Chakra Petch',sans-serif",                  size:'78px', ls:'-0.01em'},
+    'Chakra Petch':   {family:"'Chakra Petch',sans-serif",                  size:'78px', ls:'-0.01em', cmp:'70px'},
   };
+  /* `cmp` = smaller size for the 2-digit Compact tiles, for fonts whose "00"/"88"
+     is wider than ~90% of the 100px tile (Chakra Petch was 102px: clipped). */
+  function digitSize(f){ return S.mode==='compact'&&f.cmp?f.cmp:f.size; }
   function applyFont(){
     const f=FONT_MAP[S.font]||FONT_MAP['Anton'];
     const r=document.documentElement.style;
     r.setProperty('--digit-font',f.family);
-    r.setProperty('--digit-size',f.size);
+    r.setProperty('--digit-size',digitSize(f));
     r.setProperty('--digit-ls',f.ls);
     applyResponsive();
   }
@@ -602,7 +633,7 @@
       const tileW=S.mode==='compact'?'84px':'50px';
       tiles.forEach(t=>{ t.style.width=tileW; t.style.height='92px'; });
       const f=FONT_MAP[S.font]||FONT_MAP['Anton'];
-      const medSize=Math.round(parseFloat(f.size)*0.88)+'px';
+      const medSize=Math.round(parseFloat(digitSize(f))*0.88)+'px';
       nums.forEach(n=>{ n.style.fontSize=medSize; n.style.height='92px'; n.style.lineHeight='92px'; });
       botNums.forEach(n=>{ n.style.top='-46px'; });
     }else{
@@ -615,6 +646,31 @@
       botNums.forEach(n=>{ n.style.top=''; });
     }
     updateDate(new Date());
+    fitScale();
+  }
+
+  /* Shrink-to-fit: the zoom slider sets the preferred size, but the clock never
+     grows past the embed, so a 150% zoom or a 12-hour clock in a 320px block
+     can't push the tiles, the gear or the date off the edge. Layout sizes are
+     unaffected by the transform, so the ResizeObserver on the wrapper can't loop. */
+  function fitScale(){
+    const want=S.zoom/100;
+    const ow=$wrapper.offsetWidth, oh=$wrapper.offsetHeight;
+    const cw=$cont.clientWidth, ch=$cont.clientHeight;
+    const fit=(ow&&oh&&cw&&ch)?Math.min((cw-4)/ow,(ch-4)/oh):want;
+    $wrapper.style.transform='scale('+Math.max(.2,Math.min(want,fit))+')';
+  }
+
+  /* Device detection. Not user-agent sniffing: whether the main pointer is a
+     finger and how wide the embed is (works in the Notion mobile app). Exposed as
+     <html data-device="phone|tablet|desktop" data-touch="1|0">; the touch sizes
+     themselves are in the (pointer: coarse) CSS block. */
+  const _coarse=window.matchMedia('(pointer: coarse)');
+  function detectDevice(){
+    const w=$cont.clientWidth||window.innerWidth;
+    const touch=_coarse.matches||navigator.maxTouchPoints>0&&!window.matchMedia('(pointer: fine)').matches;
+    document.documentElement.dataset.device=w<=420?'phone':(touch||w<=820)?'tablet':'desktop';
+    document.documentElement.dataset.touch=touch?'1':'0';
   }
 
   /* ==========================================================================
@@ -862,7 +918,7 @@
       r.setProperty('--flap-shade-soft','0.3');
     }
     $cont.style.background=S.bg;
-    $wrapper.style.transform='scale('+S.zoom/100+')';
+    fitScale();
     pop.classList.remove('pop-light','pop-dark');
     pop.classList.add(effectiveTheme()==='dark'?'pop-dark':'pop-light');
   }
@@ -901,12 +957,17 @@
       card.addEventListener('click',()=>applyPreset(p));
     });
   }
+  /* WCAG contrast ratio between two #rrggbb colours (1 = identical, 21 = max). */
+  function contrast(a,b){
+    const L=h=>{ const c=[1,3,5].map(i=>{ const v=parseInt(h.slice(i,i+2),16)/255; return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4); }); return 0.2126*c[0]+0.7152*c[1]+0.0722*c[2]; };
+    const x=L(a), y=L(b); return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05);
+  }
   function applyPreset(p){
-    S.tile=p.tile; save();
-    const r=document.documentElement.style;
-    r.setProperty('--tile-bg',S.tile);
-    r.setProperty('--gear-color',getTileTextColor(S.tile));
-    hlPreset();
+    S.tile=p.tile;
+    // A light preset (Parchment) under white numbers, or a dark one under black
+    // numbers, would make the digits vanish - switch the numbers to black/white.
+    if(isValidHex(S.timeText)&&contrast(S.timeText,S.tile)<2.5) S.timeText=getTileTextColor(S.tile)==='#1a1a1a'?'#111111':'#ffffff';
+    save(); applyAll(); hlGroup('timeText'); hlPreset();     // applyAll also refreshes the seam + gear colours
   }
   function hlPreset(){
     const m=PRESETS.find(p=>p.tile===S.tile);
@@ -1097,7 +1158,7 @@
   }
   function syncTg(id,val){ document.querySelectorAll('#'+id+' .tb').forEach(b=>b.classList.toggle('on',b.dataset.v===val)); }
 
-  setupTg('gMode','mode',renderClock);
+  setupTg('gMode','mode',()=>{ renderClock(); applyFont(); });
   setupTg('gMotion','motion',applyMotion);
   /* Migrate derived colours (text swatches, tile, body bg) from one resolved
      light/dark theme to the other. Shared by explicit Light/Dark/Auto clicks
@@ -1171,15 +1232,28 @@
   zSlider.value=S.zoom; zLabel.textContent=S.zoom+'%';
 
   // Keep the container exactly viewport-sized and responsive.
-  const ro=new ResizeObserver(()=>applyResponsive());
+  const ro=new ResizeObserver(()=>{ detectDevice(); applyResponsive(); });
   ro.observe($cont);
+  new ResizeObserver(fitScale).observe($wrapper);   // font swaps / 12h badge change the clock's size
+  _coarse.addEventListener('change',detectDevice);
+  detectDevice();
   function fillViewport(){ $cont.style.width=window.innerWidth+'px'; $cont.style.height=window.innerHeight+'px'; }
   window.addEventListener('resize',fillViewport);
   fillViewport();
 
-  // Tick exactly on the next minute boundary, then every minute.
-  const ms=(60-new Date().getSeconds())*1000-new Date().getMilliseconds();
-  setTimeout(()=>{ tick(); setInterval(tick,60000); },ms);
+  // Tick on every minute boundary. Re-aimed at the next boundary each time (no
+  // setInterval drift), and re-synced as soon as the page is visible again:
+  // browsers delay timers in background tabs / after sleep by up to a minute,
+  // which used to leave the clock showing the wrong minute.
+  let tickTimer=null;
+  function scheduleTick(){
+    clearTimeout(tickTimer);
+    const n=new Date();
+    tickTimer=setTimeout(()=>{ tick(); scheduleTick(); },(60-n.getSeconds())*1000-n.getMilliseconds()+20);
+  }
+  scheduleTick();
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden){ tick(); scheduleTick(); } });
+  window.addEventListener('focus',()=>{ tick(); scheduleTick(); });
   </script>
 </body>
 </html>
