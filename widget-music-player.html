@@ -16,6 +16,9 @@
       Full/Compact view toggle.
     • Persists per-embed-instance to localStorage ('spw1_<instance>'); the
       ?instance= query param lets several copies on one page keep separate state.
+    • Adapts to the device: the card always fits its embed (zoom never clips
+      it), <html data-device/data-touch>, bigger tap targets and 16px fields on
+      touch, popup fits narrow embeds. Preset names are HTML-escaped.
 
     SCREENS / PANES
       url-screen     — the "paste a link" entry screen (with Recents).
@@ -184,7 +187,7 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%) scale(.93);
-      width: 310px;
+      width: min(310px, calc(100vw - 16px));
       max-height: 88vh;
       overflow-y: auto;
       border-radius: 14px;
@@ -325,6 +328,25 @@
     .sp-btn-save:hover { filter: brightness(1.1); }
     .sp-btn-cancel { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid var(--border-color, rgba(255,255,255,0.15)); background: none; color: var(--text-muted, rgba(255,255,255,0.6)); font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
     .sp-btn-cancel:hover { background: var(--hover-bg, rgba(255,255,255,0.06)); color: var(--text-color, #fff); }
+    .presets-restore { display: block; width: 100%; margin: 10px 0 4px; padding: 8px; border-radius: 8px; border: 1px dashed var(--border-color, rgba(255,255,255,0.15)); background: none; color: var(--text-muted, rgba(255,255,255,0.6)); font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600; cursor: pointer; }
+    .presets-restore:hover { color: var(--text-color, #fff); }
+
+    /* ===== Touchscreens (phones, tablets, Notion mobile app) ===== */
+    button, .tb, .recent-chip, .preset-item { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    .presets-body, .pop { overscroll-behavior: contain; }
+    @media (pointer: coarse) {
+      .icon-btn { width: 40px; height: 40px; }
+      .header-actions { gap: 2px; }
+      .recent-chip-x { width: 34px; height: 34px; }
+      .preset-del { width: 34px; height: 34px; }
+      .presets-close, .pop-x { min-width: 36px; min-height: 36px; }
+      .tb { padding: 12px 4px; }
+      .url-btn, .svc-sw-btn, .sp-btn-save, .sp-btn-cancel { min-height: 42px; }
+      .pop-apply { height: 42px; }
+      .zs { height: 6px; }
+      /* 16px stops iOS Safari from zooming the page when a field is focused. */
+      .url-input, .pop-input, .sp-input { font-size: 16px; height: 42px; }
+    }
   </style>
 </head>
 
@@ -459,9 +481,9 @@
       <button class="tb" data-v="compact">Now Playing</button>
     </div>
 
-    <div class="sep"></div>
-    <div class="lbl">Service</div>
-    <button class="svc-sw-btn" id="switchSvcBtn">Change link</button>
+    <div class="sep has-link-only"></div>
+    <div class="lbl has-link-only">Service</div>
+    <button class="svc-sw-btn has-link-only" id="switchSvcBtn">Change link</button>
 
     <div class="rst" id="rstBtn">Reset to defaults</div>
     <div class="rst-confirm" id="rstConfirm">
@@ -477,7 +499,8 @@
      The ?instance= query param namespaces storage so multiple copies of the
      widget on one Notion page keep independent links/settings.
      ========================================================================== */
-  const DEF={theme:'auto',zoom:100,glow:false,service:'',spotifyUrl:'',ytUrl:'',spotifyView:'full',recentLinks:[],customPresets:[],deletedPresets:[]};
+  const DEF={theme:'auto',zoom:100,glow:false,service:'',spotifyUrl:'',ytUrl:'',spotifyView:'full',recentLinks:[],customPresets:[],deletedPresets:[],
+             _themeMig:1};   // fresh saves are already "post-Auto"; see load()
   let S={...DEF};
 
   /* Auto theme: resolves 'auto' against the OS/browser colour-scheme
@@ -519,16 +542,25 @@
   }
   const SPOTIFY_LABELS={playlist:'Playlist',album:'Album',track:'Track',episode:'Episode',show:'Podcast'};
 
+  /* Accepts watch?v=, youtu.be/, /shorts/, /live/, /embed/, /v/ links (www, m.,
+     music.) plus playlists, and keeps a start time (t= or start=, e.g. 90, 1m30s). */
   function parseYTUrl(input){
     const s=input.trim();
     if(!/youtu\.?be|music\.youtube/i.test(s)) return null;
-    const videoMatch=s.match(/[?&]v=([a-zA-Z0-9_-]{11})/)||s.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
+    const videoMatch=s.match(/[?&]v=([a-zA-Z0-9_-]{11})/)||s.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/)
+                   ||s.match(/youtube\.com\/(?:shorts|live|embed|v)\/([a-zA-Z0-9_-]{11})/i);
     const listMatch=s.match(/[?&]list=([a-zA-Z0-9_-]+)/);
     const videoId=videoMatch?videoMatch[1]:null;
     const listId=listMatch?listMatch[1]:null;
     if(!videoId&&!listId) return null;
-    return {videoId,listId};
+    let start=0;
+    const tm=s.match(/[?&#](?:t|start)=([0-9hms]+)/i);
+    if(tm){ const v=tm[1]; if(/^\d+$/.test(v)) start=+v; else { const h=v.match(/(\d+)h/i), m=v.match(/(\d+)m/i), sec=v.match(/(\d+)s/i); start=(h?+h[1]*3600:0)+(m?+m[1]*60:0)+(sec?+sec[1]:0); } }
+    return {videoId,listId,start};
   }
+  /* Short share links have to be opened before their target is known. */
+  function isShortLink(s){ return /(?:spotify\.link|spoti\.fi)\//i.test(s); }
+  function esc(v){ return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
   /* ==========================================================================
      3. ICONS
@@ -565,7 +597,32 @@
   }
 
   const wrapper=document.getElementById('wrapper');
-  function applyZoom(){ wrapper.style.transform=`scale(${S.zoom/100})`; }
+  /* Zoom that always fits the embed. The card is full-width, so zooming in
+     narrows its layout width by the same factor (it grows but still spans the
+     embed instead of spilling off both sides); the scale is then capped so a
+     tall card (400px Spotify/YouTube player) never runs off the top/bottom. */
+  function applyZoom(){
+    const c=wrapper.parentElement, want=S.zoom/100;
+    wrapper.style.width=want>1?(100/want)+'%':'';
+    const h=wrapper.offsetHeight, ch=c.clientHeight;
+    const z=Math.max(.3,Math.min(want,(h&&ch)?(ch-2)/h:want));
+    wrapper.style.width=z>1?(100/z)+'%':'';
+    wrapper.style.transform=`scale(${z})`;
+  }
+  /* Device detection. Not user-agent sniffing: whether the main pointer is a
+     finger and how wide the embed is (works in the Notion mobile app). */
+  const _coarse=window.matchMedia('(pointer: coarse)');
+  function detectDevice(){
+    const w=document.documentElement.clientWidth||window.innerWidth;
+    const touch=_coarse.matches||navigator.maxTouchPoints>0&&!window.matchMedia('(pointer: fine)').matches;
+    document.documentElement.dataset.device=w<=420?'phone':(touch||w<=820)?'tablet':'desktop';
+    document.documentElement.dataset.touch=touch?'1':'0';
+  }
+  // Re-fit on embed resizes and whenever the card's own height changes
+  // (switching screens, Full/Compact, presets panel).
+  new ResizeObserver(()=>{ detectDevice(); applyZoom(); }).observe(document.documentElement);
+  new ResizeObserver(()=>applyZoom()).observe(wrapper);
+  _coarse.addEventListener('change',detectDevice);
   function applyGlow(){ wrapper.classList.toggle('glow-active',S.glow===true||S.glow==='true'); }
   function applyAll(){ applyTheme(); applyZoom(); applyGlow(); }
 
@@ -646,7 +703,9 @@
     if(spotify){ S.service='spotify'; S.spotifyUrl=trimmed; errorEl.textContent=''; pushRecent(trimmed,'spotify'); return true; }
     const yt=parseYTUrl(trimmed);
     if(yt){ S.service='youtube'; S.ytUrl=trimmed; errorEl.textContent=''; pushRecent(trimmed,'youtube'); return true; }
-    errorEl.textContent='Not a valid Spotify or YouTube link.';
+    errorEl.textContent=isShortLink(trimmed)
+      ?'Short links can\'t be read — open it, then copy the full open.spotify.com link.'
+      :'Not a valid Spotify or YouTube link.';
     return false;
   }
 
@@ -712,7 +771,7 @@
      9. YOUTUBE PLAYER (native embed)
      ========================================================================== */
   function buildYTEmbedUrl(parsed){
-    const params='rel=0&modestbranding=1';
+    const params='rel=0&modestbranding=1'+(parsed.start?'&start='+parsed.start:'');
     if(parsed.videoId&&parsed.listId) return `https://www.youtube.com/embed/${parsed.videoId}?list=${parsed.listId}&${params}`;
     if(parsed.videoId) return `https://www.youtube.com/embed/${parsed.videoId}?${params}`;
     if(parsed.listId) return `https://www.youtube.com/embed/videoseries?list=${parsed.listId}&${params}`;
@@ -733,6 +792,7 @@
   // Reveal Spotify-only rows when Spotify is the active service.
   function updatePopupContent(){
     document.querySelectorAll('.spotify-only').forEach(el=>el.classList.toggle('show',S.service==='spotify'));
+    document.querySelectorAll('.has-link-only').forEach(el=>el.style.display=currentUrl()?'':'none');   // "Change link" needs a link
   }
   function openPop(){
     pop.classList.add('open'); ov.classList.add('open');
@@ -828,7 +888,10 @@
     section.style.display='';
     list.innerHTML=links.map((r,i)=>{
       const icon=svcIcon(r.service);
-      return `<div class="recent-chip" data-idx="${i}"><div class="recent-chip-icon">${icon}</div><div class="recent-chip-label">${r.label}</div><button class="recent-chip-x" data-del="${i}" title="Remove">✕</button></div>`;
+      // Show the preset's name when the link is a saved/built-in preset.
+      const pr=(Array.isArray(S.customPresets)?S.customPresets:[]).concat(PRESETS).find(p=>p.url===r.url);
+      const label=pr?pr.name:r.label;
+      return `<div class="recent-chip" data-idx="${i}"><div class="recent-chip-icon">${icon}</div><div class="recent-chip-label">${esc(label)}</div><button class="recent-chip-x" data-del="${i}" title="Remove">✕</button></div>`;
     }).join('');
     list.querySelectorAll('.recent-chip').forEach(chip=>{
       chip.addEventListener('click',e=>{
@@ -875,7 +938,7 @@
       S.customPresets.forEach((p,i)=>{
         const icon=svcIcon(p.service);
         const svcLabel=p.service==='spotify'?'Spotify':'YouTube';
-        html+=`<div class="preset-item" data-type="custom" data-idx="${i}"><div class="preset-icon">${icon}</div><div class="preset-info"><div class="preset-name">${p.name}</div><div class="preset-cat-label">${svcLabel}</div></div><button class="preset-del" data-type="custom" data-idx="${i}" title="Remove">✕</button></div>`;
+        html+=`<div class="preset-item" data-type="custom" data-idx="${i}"><div class="preset-icon">${icon}</div><div class="preset-info"><div class="preset-name">${esc(p.name)}</div><div class="preset-cat-label">${svcLabel}</div></div><button class="preset-del" data-type="custom" data-idx="${i}" title="Remove">✕</button></div>`;
       });
     }
 
@@ -885,11 +948,15 @@
       if(S.deletedPresets.includes(p.url)) return;
       if(p.category!==lastCat){ html+=`<div class="presets-cat">${p.category}</div>`; lastCat=p.category; }
       const icon=svcIcon(p.service);
-      html+=`<div class="preset-item" data-type="builtin" data-idx="${i}"><div class="preset-icon">${icon}</div><div class="preset-info"><div class="preset-name">${p.name}</div><div class="preset-cat-label">${p.category}</div></div><button class="preset-del" data-type="builtin" data-idx="${i}" title="Remove">✕</button></div>`;
+      html+=`<div class="preset-item" data-type="builtin" data-idx="${i}"><div class="preset-icon">${icon}</div><div class="preset-info"><div class="preset-name">${esc(p.name)}</div><div class="preset-cat-label">${esc(p.category)}</div></div><button class="preset-del" data-type="builtin" data-idx="${i}" title="Remove">✕</button></div>`;
     });
+
+    // Built-ins removed by the user can be brought back.
+    if(S.deletedPresets.length) html+=`<button class="presets-restore" id="presetsRestore">Restore ${S.deletedPresets.length} built-in preset${S.deletedPresets.length>1?'s':''}</button>`;
 
     const body=document.getElementById('presetsBody');
     body.innerHTML=html;
+    body.querySelector('#presetsRestore')?.addEventListener('click',()=>{ S.deletedPresets=[]; save(); buildPresets(); updateSavePresetBtn(); });
 
     // Click a preset → load it.
     body.querySelectorAll('.preset-item').forEach(el=>{
@@ -938,7 +1005,8 @@
     const url=currentUrl();
     document.getElementById('spUrlIcon').innerHTML=svcIcon(S.service);
     document.getElementById('spUrlText').textContent=url;
-    document.getElementById('spNameInput').value='';
+    const existing=(S.customPresets||[]).find(p=>p.url===url);
+    document.getElementById('spNameInput').value=existing?existing.name:'';
     document.getElementById('spError').textContent='';
     document.getElementById('savePresetPanel').classList.add('open');
     setTimeout(()=>document.getElementById('spNameInput').focus(),120);
@@ -964,6 +1032,7 @@
     if(!name){ errorEl.textContent='Please enter a name.'; return; }
     if(!Array.isArray(S.customPresets)) S.customPresets=[];
     const url=currentUrl();
+    S.customPresets=S.customPresets.filter(p=>p.url!==url);       // same link saved again = rename, no duplicate
     S.customPresets.unshift({name,service:S.service,url});
     save();
     buildPresets();
@@ -987,6 +1056,7 @@
   /* ==========================================================================
      17. INIT
      ========================================================================== */
+  detectDevice();
   load();
   syncTg('gTheme',S.theme); syncTg('gView',S.spotifyView); syncTg('gGlow',String(S.glow));
   zSlider.value=S.zoom; zLabel.textContent=S.zoom+'%';

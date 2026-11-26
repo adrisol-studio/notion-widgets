@@ -95,13 +95,14 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
   - **Adapts to the device** — works in the Notion mobile app: bigger tap targets on touchscreens, fields that don't trigger iPhone zoom, and on narrow embeds the settings tabs move to the top so the options get the full width
 
 - `widget-music-player.html` — Embedded Spotify or YouTube player. Settings include:
-  - **Theme** — Minimal, Dark, OLED, Mono
+  - **Theme** — Auto (follows your system), Minimal, Dark, OLED, Mono
   - **Ambient Glow** — pulsing glow effect on the player card
-  - **Zoom** — 50 – 150 % scale
-  - **Link** — paste any Spotify or YouTube URL to load it
+  - **Zoom** — 50 – 150 % scale; the card always fits its embed, so nothing is cut off
+  - **Link** — paste any Spotify link (playlist, album, track, episode, podcast) or YouTube / YouTube Music link — videos, playlists, Shorts and Live links; a start time in the link (`?t=90` or `t=1m30s`) is kept
   - **Spotify View** — toggle between Compact (80px) and Full (400px) player
-  - **Presets** — save and manage custom playlist/track presets with labels; recent links history
-  - Switches automatically between Spotify and YouTube embed based on the pasted URL
+  - **Presets** — built-in focus presets plus your own saved ones (saving the same link again just renames it); removed built-ins can be restored; recent links history shows preset names
+  - **Adapts to the device** — works in the Notion mobile app: bigger tap targets on touchscreens, link fields that don't trigger iPhone zoom, settings popup that fits narrow embeds
+  - Switches automatically between Spotify and YouTube embed based on the pasted URL; `?instance=name` keeps several copies on one page separate
 
 - `widget-matrix.html` — Fullscreen Matrix-style digital rain. Settings include:
   - **Theme** — Dark or Light canvas background
