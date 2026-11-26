@@ -28,6 +28,8 @@
     SECTIONS
       <style>   reset/canvas, gear, popup panel, controls, colour picker.
       <body>    canvas + gear + settings popup markup.
+    DEVICES: canvas drawn at the screen's pixel density (crisp on phones),
+      gear always visible on touch, panel fits narrow embeds, Esc closes it.
       <script>  1 charsets · 2 state/url · 3 canvas+grid · 4 simulation ·
                 5 draw loop · 6 popup+controls · 7 colour picker · 8 init.
     ============================================================================
@@ -65,13 +67,22 @@
     .gear:hover { opacity: 1 !important; background: rgba(0, 0, 0, .85) !important; }
     .gear svg { width: 14px; height: 14px; fill: #bbb; }
     .gear.hide { display: none; }              /* hidden while the popup is open */
+    /* Touchscreens have no hover: keep the gear visible (and tappable) there,
+       or the settings could not be opened at all on phones/tablets. */
+    @media (hover: none) {
+      .gear { opacity: .6; transform: none; pointer-events: auto; }
+    }
+    @media (pointer: coarse) {
+      .gear { width: 40px; height: 40px; }
+      .gear svg { width: 18px; height: 18px; }
+    }
 
     /* ===== Settings popup panel ===== */
     .pop {
       position: fixed;
       top: 8px;
       left: 8px;
-      width: 300px;
+      width: min(300px, calc(100vw - 16px));
       max-height: calc(100vh - 16px);
       border-radius: 14px;
       z-index: 210;
@@ -306,6 +317,16 @@
       width: 100%;
     }
     .rst:hover { color: #888; border-color: #444; }
+    /* ===== Touchscreens (phones, tablets, Notion mobile app) ===== */
+    button, [data-v], .sw { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    .pop { overscroll-behavior: contain; }
+    @media (pointer: coarse) {
+      .pop-x { width: 38px; height: 38px; }
+      .sw { width: 32px; height: 32px; }
+      input[type=range] { height: 28px; }
+      /* 16px stops iOS Safari from zooming the page when a field is focused. */
+      .cpk-hex { font-size: 16px; }
+    }
   </style>
 </head>
 
@@ -417,11 +438,12 @@
     return null;
   }
 
-  const DEF={theme:'auto',charset:'latin',color:'#ffffff',speed:2.5,size:14,trail:8,bold:true,_lastEffective:null};
+  const DEF={theme:'auto',charset:'latin',color:'#ffffff',speed:2.5,size:14,trail:8,bold:true,_lastEffective:null,
+             _themeMig:1};   // fresh saves are already "post-Auto"; see load()
   /* Per-theme preset swatches; switching theme migrates the colour by index. */
   const PRESETS={
     dark:['#00ff41','#ffffff','#00cfff','#ff3322','#cc44ff','#ffaa00'],
-    light:['#111111','#0a8a2e','#0066cc','#c41414','#7733bb','#cc6600']
+    light:['#0a8a2e','#111111','#0066cc','#c41414','#7733bb','#cc6600']   // same order as dark: green, white/black, blue, red, purple, orange
   };
   const HGAP=6; // horizontal gap between columns (px)
   const VGAP=2; // vertical gap between rows (px)
@@ -448,8 +470,11 @@
         S={...DEF,...p};
         // One-time migration: saves from before Auto existed didn't have this
         // flag, so force Auto to be the real default even for a returning save.
-        if(!p._themeMig){ S.theme='auto'; S._lastEffective=null; }
+        // Remember which theme the old colour was picked for, so boot re-maps it.
+        if(!p._themeMig){ S._lastEffective=(p.theme==='dark'||p.theme==='light')?p.theme:null; S.theme='auto'; }
         S._themeMig=1;
+        // Repair numbers broken by an old invalid URL param (NaN stopped the rain).
+        ['speed','size','trail'].forEach(k=>{ if(!isFinite(+S[k])) S[k]=DEF[k]; });
       }
     }catch(e){}
   }
@@ -460,9 +485,10 @@
     if(P.get('charset')&&CHARSETS[P.get('charset')]) S.charset=P.get('charset');
     if(P.get('theme')==='dark'||P.get('theme')==='light') S.theme=P.get('theme');
     const c=parseColor(P.get('color')); if(c) S.color=c;
-    if(P.get('speed')) S.speed=Math.max(1,Math.min(4,+P.get('speed')));
-    if(P.get('size'))  S.size =Math.max(8,Math.min(20,+P.get('size')));
-    if(P.get('trail')) S.trail=Math.max(2,Math.min(14,+P.get('trail')));
+    // Numbers that aren't numbers (e.g. ?speed=fast) are ignored; they used to
+    // become NaN, stop the rain and get saved that way.
+    const num=(k,lo,hi)=>{ const v=parseFloat(P.get(k)); if(P.get(k)!==null&&isFinite(v)) S[k]=Math.max(lo,Math.min(hi,v)); };
+    num('speed',1,4); num('size',8,20); num('trail',2,14);
   }
 
   /* ==========================================================================
@@ -495,7 +521,26 @@
   function fontStr(){ return (S.bold===true||S.bold==='true'?'bold ':'')+S.size+'px monospace'; }
   function measureCharW(){ ctx.font=fontStr(); return Math.ceil(ctx.measureText('W').width); }
 
-  function resize(){ canvas.width=window.innerWidth; canvas.height=window.innerHeight; initGrid(); }
+  /* The canvas backing store follows the screen's pixel density (capped at 2x
+     for speed), so characters are sharp on phones / Retina screens instead of
+     being drawn at 1x and stretched. Grid maths stays in CSS pixels (cssW/H). */
+  let cssW=1, cssH=1;
+  function resize(){
+    const dpr=Math.min(2,window.devicePixelRatio||1);
+    cssW=window.innerWidth; cssH=window.innerHeight;
+    canvas.width=Math.round(cssW*dpr); canvas.height=Math.round(cssH*dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    detectDevice(); initGrid();
+  }
+  /* Device detection. Not user-agent sniffing: whether the main pointer is a
+     finger and how wide the embed is (works in the Notion mobile app). */
+  const _coarse=window.matchMedia('(pointer: coarse)');
+  function detectDevice(){
+    const w=window.innerWidth;
+    const touch=_coarse.matches||navigator.maxTouchPoints>0&&!window.matchMedia('(pointer: fine)').matches;
+    document.documentElement.dataset.device=w<=420?'phone':(touch||w<=820)?'tablet':'desktop';
+    document.documentElement.dataset.touch=touch?'1':'0';
+  }
 
   /* Stream length: short by default (so the gradient isn't obvious); the trail
      slider extends it. */
@@ -506,8 +551,8 @@
     charW=measureCharW();
     colStride=charW+HGAP;
     rowStride=S.size+VGAP;
-    cols=Math.max(1,Math.floor(canvas.width/colStride));
-    rows=Math.max(1,Math.floor(canvas.height/rowStride)+2);
+    cols=Math.max(1,Math.floor(cssW/colStride));
+    rows=Math.max(1,Math.floor(cssH/rowStride)+2);
 
     charGrid=Array.from({length:cols},()=>Array.from({length:rows},rc));
     alphaGrid=Array.from({length:cols},()=>Array(rows).fill(0));
@@ -606,7 +651,7 @@
   function applyTheme(){ document.body.style.background=effectiveTheme()==='light'?'#ffffff':'#191919'; }
 
   function draw(){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.clearRect(0,0,cssW,cssH);
 
     const rgb=hexRgb(S.color);
     ctx.font=fontStr();
@@ -649,6 +694,7 @@
   function closePop(){ pop.classList.remove('open'); gearBtn.classList.remove('hide'); }
   gearBtn.addEventListener('click',openPop);
   document.getElementById('popX').addEventListener('click',closePop);
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePop(); });
 
   // Style (Bold/Normal): rebuild so the font weight applies.
   document.getElementById('gBold').addEventListener('click',e=>{

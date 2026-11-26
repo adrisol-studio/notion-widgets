@@ -105,7 +105,7 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
   - Switches automatically between Spotify and YouTube embed based on the pasted URL; `?instance=name` keeps several copies on one page separate
 
 - `widget-matrix.html` — Fullscreen Matrix-style digital rain. Settings include:
-  - **Theme** — Dark or Light canvas background
+  - **Theme** — Auto (follows your system), Dark or Light canvas background
   - **Style** — Bold or Normal characters
   - **Characters** — Matrix (カナ), Alpha (ABC), Binary (01), Digits (123), Glitch (!@#), or Chaos — picked from a tile grid that previews a sample character
   - **Colour** — 6 theme-aware preset swatches (bright tones on the dark theme, deeper tones on the light theme) plus a full HSV custom colour picker; switching theme migrates the choice by index so the rain stays visible
@@ -113,7 +113,9 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
   - **Font Size** — 8 – 20 px (step 1)
   - **Trail Length** — 2 – 14 (step 1)
   - Settings panel opens in the top-left corner with no overlay so live changes are visible behind it
-  - Fills any embed size; settings accessible via gear icon
+  - Fills any embed size; settings accessible via gear icon (always visible on touchscreens), Esc closes the panel
+  - **Adapts to the device** — characters are drawn at the screen's real resolution, so they stay sharp on phones and Retina screens; the settings panel fits narrow embeds
+  - **Link options** — `?charset=katakana|latin|binary|numbers|symbols|mixed&theme=dark|light&color=00ff41&speed=1-4&size=8-20&trail=2-14`; values that aren't valid are ignored
 
 - `widget-timetable.html` — Class timetable in the Dark XP look (Dark, Light or Auto). Features:
   - **AI import** — the widget provides a ready-made prompt; paste it into Claude, ChatGPT or Gemini with a photo of your timetable, paste the JSON reply back, preview it (bad rows are listed and skipped), then **Replace all** or **Add to current**. Holiday dates shown on the timetable come through too
