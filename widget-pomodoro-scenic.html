@@ -74,9 +74,11 @@
     /* ========================================================================
        2. BACKGROUND SCENE
        The .scene element holds the active background (SVG / image / video).
-       It is full-bleed by default; the .is-pan modifier widens it to 160% so
-       there is room for the left/right pan animations to slide without showing
-       an edge. .is-video makes it full-bleed and motionless (the video itself
+       It is full-bleed by default; the .is-pan modifier widens it so there is
+       room for the left/right pan animations to slide without showing an edge.
+       Widening a 16:9 picture makes "cover" crop its top and bottom, so ordinary
+       scenes get a gentle pan (116% wide: ~7% cropped top and bottom) and only
+       true panoramas (.is-wide, drawn 2400 wide) get the big 160% sweep. .is-video makes it full-bleed and motionless (the video itself
        carries the motion).
        ======================================================================== */
     .scene {
@@ -90,7 +92,8 @@
       transform-origin: center center;
       will-change: transform;
     }
-    .scene.is-pan   { left: -30%; width: 160%; }          /* extra width for panning */
+    .scene.is-pan   { left: -8%;  width: 116%; --pan: 6.5%; }  /* 16:9 art / custom images */
+    .scene.is-pan.is-wide { left: -30%; width: 160%; --pan: 17%; }  /* panoramas */
     .scene svg      { width: 100%; height: 100%; display: block; }
     .scene video    { width: 100%; height: 100%; object-fit: cover; display: block; }
     .scene.is-video { left: 0; width: 100%; transform: none; animation: none; }
@@ -102,19 +105,19 @@
       transition: opacity .55s ease;
     }
 
-    /* Motion keyframes. Pan needs the 160% width above; translateX % is
-       relative to the ELEMENT's width, so ±17% of 160vw = ±27.2vw of travel,
-       safely inside the 30vw overhang on each side (no edge ever shows).
+    /* Motion keyframes. translateX % is relative to the ELEMENT's width, so the
+       travel is ±--pan of the widened box: ±6.5% of 116vw = ±7.5vw inside an 8vw
+       overhang, or ±17% of 160vw = ±27.2vw inside 30vw - no edge ever shows.
        Zoom/kenburns stay scaled >1 so they never expose an edge at width:100%. */
     @keyframes panLR {
-      0%   { transform: translateX(-17%); }
-      50%  { transform: translateX(17%); }
-      100% { transform: translateX(-17%); }
+      0%   { transform: translateX(calc(var(--pan, 17%) * -1)); }
+      50%  { transform: translateX(var(--pan, 17%)); }
+      100% { transform: translateX(calc(var(--pan, 17%) * -1)); }
     }
     @keyframes panRL {
-      0%   { transform: translateX(17%); }
-      50%  { transform: translateX(-17%); }
-      100% { transform: translateX(17%); }
+      0%   { transform: translateX(var(--pan, 17%)); }
+      50%  { transform: translateX(calc(var(--pan, 17%) * -1)); }
+      100% { transform: translateX(var(--pan, 17%)); }
     }
     @keyframes zoomIO {
       0%   { transform: scale(1); }
@@ -1046,10 +1049,11 @@
   }
 
   /* Build the .scene class list for a motion: pan motions also get .is-pan
-     (the 140%-wide variant) so they have room to slide. */
-  function sceneClass(motion){
+     (widened so they have room to slide), and .is-wide for panoramas. */
+  function isWide(item){ const m=item&&item.svg&&item.svg.match(/viewBox="0 0 (\d+) (\d+)"/); return !!(m&&+m[1]>+m[2]*2.2); }
+  function sceneClass(motion,wide){
     const pan=(motion==='panlr'||motion==='panrl');
-    return 'scene m-'+motion+(pan?' is-pan':'');
+    return 'scene m-'+motion+(pan?' is-pan'+(wide?' is-wide':''):'');
   }
 
   /* Crossfade: snapshot the outgoing scene as a ghost layered above the new
@@ -1092,7 +1096,7 @@
     const item=getActiveItem();
     if(item&&item.video){ renderVideo(item.video,item.webm||'',item.poster||''); return; }
 
-    scene.className=sceneClass(cat.motion);
+    scene.className=sceneClass(cat.motion,isWide(item));
     paintStill(item);
   }
 
@@ -1139,7 +1143,7 @@
   function sceneFallback(){
     const cat=LIBRARY[S.category]||LIBRARY.kenburns;
     const item=getActiveItem();
-    scene.className=sceneClass(cat.motion);
+    scene.className=sceneClass(cat.motion,isWide(item));
     scene.innerHTML='';
     scene.style.background='';
     if(item) paintStill(item);
