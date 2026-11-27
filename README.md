@@ -16,6 +16,7 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
 | 🎵 Music Player | https://adrisol-studio.github.io/notion-widgets/widget-music-player.html |
 | 🌧 Matrix Rain | https://adrisol-studio.github.io/notion-widgets/widget-matrix.html |
 | 🗓 Timetable | https://adrisol-studio.github.io/notion-widgets/widget-timetable.html |
+| 🎓 GPA Calculator | https://adrisol-studio.github.io/notion-widgets/widget-gpa.html |
 
 ---
 
@@ -34,6 +35,8 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
 | Matrix Rain | — | any | any |
 | Timetable | Full (Today / Week) | 520px | 600px |
 | Timetable | Narrow | 340px | 520px |
+| GPA Calculator | Full | 560px | 640px |
+| GPA Calculator | Narrow | 340px | 560px |
 
 ---
 
@@ -129,6 +132,15 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
   - **Adapts to the device** — detects touch vs mouse and the embed's own width (phone / tablet / desktop), so it also works in the Notion mobile app: bigger tap targets on touch, swipe left / right between days, long course names wrap on phones, the week grid scrolls sideways on phones (opening on today, with hours and day names pinned), and form fields don't trigger iPhone zoom
   - **Safe with your data** — if the browser won't let the embed save (private mode, blocked storage) a warning points you to the portable link; the same widget open in two tabs stays in sync instead of overwriting each other
   - **Keyboard friendly** — every button, class and colour is reachable with Tab, opens with Enter / Space, panels close with Esc and return focus where you were
-  - **Samples** — try it before importing: a hypothetical **B.Tech CSE** 3rd-semester timetable (Mon–Sat, labs, tutorials, mid-sem exams + Diwali break) or a **General college** timetable
+  - **Samples** — try it before importing: a hypothetical **B.Tech CSE** 3rd-semester timetable (Mon–Sat, labs, tutorials, mid-sem exams + a winter break) or a **General college** timetable
   - Accent colour, 12 / 24 h, week starts Mon / Sun, zoom 70 – 140 %; `?instance=name` keeps several copies on one page separate
 
+- `widget-gpa.html` — GPA / CGPA calculator with a Notion-native minimal look: Notion's own dark grey (#191919) or white page colours (or Auto), clean Inter type with large numbers, a thin progress bar with your target marked on it, and flat cards; accent colours from Notion's palette (mint by default, blue, purple, orange, pink, yellow) or custom. Features:
+  - **Grading scales** — **4.0 GPA** (A+ … F with +/-, the default), **10-point CGPA** (O, A+, A, B+, B, C, P, F) or **Percentage** (marks out of 100); switching scale keeps course names and credits and asks before clearing grades
+  - **Semesters & courses** — add semesters and courses and edit them in place; semester GPA (SGPA) and cumulative GPA (CGPA) update as you type, weighted by credits. Courses without a grade yet count as **in progress**; **W** (withdrawn) is left out. Enter moves to the next field and adds a new course at the end of a row; deleting a course or semester can be undone
+  - **Earlier record** — start from a previous GPA plus the credits it covers instead of typing every old course
+  - **Target planner** — the average you need across your remaining credits to reach a target GPA (defaults to your in-progress credits), shown in letters too ("between B+ and A-"), with "already safe" / "not reachable" answers and the target marked on the progress bar
+  - **Final exam** — what you need on a final to finish a course with the grade you want, plus a quick table for 90 / 80 / 70 / 60 %
+  - **Portable link** (`#d=…`), copy-backup / restore, a warning when the browser won't let the embed save, and two open copies stay in sync
+  - **Adapts to the device** — course rows stack on phones, bigger tap targets on touch, fields that don't trigger iPhone zoom, and a compact header so Settings stays on screen in narrow embeds at any zoom; keyboard friendly throughout
+  - Accent colour, 2 or 3 decimals, zoom 70 – 140 %, sample grades for each scale; `?instance=name` keeps several copies on one page separate
