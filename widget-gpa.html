@@ -510,6 +510,7 @@
     x:'<svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>'
   };
   function semLabel(){ return scale().semShort||scale().short; }
+  function maxMsg(){ const sc=scale(); return sc.numeric?'The highest possible average is 100%.':`The highest possible ${sc.short} is ${sc.max}.`; }
   function maxLbl(){ return S.scale==='pct'?'%':'/ '+scale().max.toFixed(S.scale==='4'?1:0); }
 
   function render(){
@@ -650,7 +651,7 @@
     const unit=sc.numeric?'%':'';
     let cls='', html='';
     if(p.state==='none') html=`Set a target to see the average you need in your remaining credits.`;
-    else if(p.state==='over'){ cls='bad'; html=`The highest possible ${esc(sc.short)} is ${sc.max}.`; }
+    else if(p.state==='over'){ cls='bad'; html=maxMsg(); }
     else if(p.state==='norem'){
       html=isFinite(p.o.gpa)&&p.o.gpa>=p.t?`You're at <b>${fmt(p.o.gpa)}</b> — already at or above your target. 🎉`:`Enter how many credits you still have to take (or add courses without a grade yet) to plan for <b>${fmt(p.t)}</b>.`;
       if(isFinite(p.o.gpa)&&p.o.gpa>=p.t) cls='ok';
@@ -762,6 +763,8 @@
   $('ft').addEventListener('click',e=>{ if(e.target.closest('[data-act="nosave"]')) openPanel('pSet'); });
 
   function addSemester(){
+    // Same cap as sanitizeData keeps, so a 41st semester can't silently vanish on reload.
+    if(D.sems.length>=40){ toast('You can have up to 40 semesters'); return; }
     const n=D.sems.length+1;
     const sm={id:uid(),name:'Semester '+n,open:true,courses:[]};
     D.sems.forEach(s=>s.open=false);       // keep the list short: focus on the new one
@@ -856,7 +859,7 @@
 
   function priorChanged(){
     const g=num($('sPriorGpa').value), k=num($('sPriorCr').value), sc=scale();
-    $('sPriorErr').textContent=isFinite(g)&&g>sc.max?`The highest possible ${sc.short} is ${sc.max}.`:'';
+    $('sPriorErr').textContent=isFinite(g)&&g>sc.max?maxMsg():'';
     S.priorGpa=isFinite(g)&&g>=0&&g<=sc.max?String(g):'';
     S.priorCr=isFinite(k)&&k>=0?String(k):'';
     save(); render();
@@ -889,7 +892,7 @@
 
   // Two-step destructive actions
   let armed=null;
-  function disarm(){ armed=null; $('sClear').textContent='Clear all grades'; $('sReset').textContent='Reset settings'; }
+  function disarm(){ armed=null; $('sClear').textContent='Clear all grades'; $('sReset').textContent='Reset settings'; $('sSample').textContent='Load sample grades'; }
   $('sClear').onclick=()=>{
     if(armed!=='clear'){ disarm(); armed='clear'; $('sClear').textContent='Tap again — this deletes every semester'; return; }
     const old=D, oldP=[S.priorGpa,S.priorCr];
