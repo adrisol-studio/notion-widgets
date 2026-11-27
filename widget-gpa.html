@@ -9,8 +9,8 @@
     ============================================================================
     GPA CALCULATOR  —  self-contained GPA / CGPA widget for Notion (/embed)
     ============================================================================
-    • Dark XP look (matches the Dark XP Student Planner and the Timetable
-      widget), with Light + Auto.
+    • Notion-native minimal look: Notion's own #191919 dark / white light page
+      colours and text colours, Inter, mint accent (Notion's palette); Auto too.
     • Grading scales: 4.0 GPA (default, A+ … F with +/-), 10-point CGPA
       (O, A+, A, B+, B, C, P, F) and Percentage (marks out of 100).
     • Semesters of courses (name, credits, grade) edited inline; semester GPA
@@ -42,97 +42,98 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,500;1,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
   <style>
-    /* ===== Tokens — "Dark Academia": espresso + parchment, gold ink =====
-       Deliberately different from the Timetable's cool purple XP look. */
-    :root { --acc: #d4a853; --serif: 'Playfair Display', Georgia, 'Times New Roman', serif; }
+    /* ===== Tokens — Notion-native minimal =====
+       Uses Notion's own page colours (#191919 dark / white light) and its
+       text colours, so the widget blends into the page. Mint accent keeps it
+       distinct from the Timetable's purple. */
+    :root { --acc: #4dab9a; }
     [data-theme="dark"] {
-      --bg: #13100d; --card: #1b1712; --card2: #241e18; --card3: #30281f;
-      --line: rgba(232,212,176,.09); --line2: rgba(232,212,176,.17);
-      --text: #f1e7d5; --sub: rgba(241,231,213,.66); --faint: rgba(241,231,213,.38);
-      --gold: #d9b66b; --red: #e08377; --green: #9cc492; --on-acc: #1b1712;
-      --shadow: 0 14px 44px rgba(0,0,0,.6);
+      --bg: #191919; --card: #202020; --card2: #252525; --card3: #2f2f2f;
+      --line: rgba(255,255,255,.065); --line2: rgba(255,255,255,.11);
+      --text: rgba(255,255,255,.92); --sub: rgba(255,255,255,.6); --faint: rgba(255,255,255,.36);
+      --gold: #dfab01; --red: #ff7369; --green: #4dab9a; --on-acc: #fff;
+      --shadow: 0 12px 40px rgba(0,0,0,.5);
     }
     [data-theme="light"] {
-      --bg: #f1e8d8; --card: #fbf6ec; --card2: #f3ead9; --card3: #e8dcc5;
-      --line: rgba(74,52,24,.12); --line2: rgba(74,52,24,.22);
-      --text: #2b2117; --sub: rgba(43,33,23,.70); --faint: rgba(43,33,23,.45);
-      --gold: #8a5a12; --red: #a8473d; --green: #3f7a44; --on-acc: #fffaf0;
-      --shadow: 0 14px 44px rgba(74,52,24,.18);
+      --bg: #ffffff; --card: #ffffff; --card2: #f7f7f5; --card3: #ededeb;
+      --line: rgba(55,53,47,.09); --line2: rgba(55,53,47,.16);
+      --text: #37352f; --sub: rgba(55,53,47,.65); --faint: rgba(55,53,47,.42);
+      --gold: #b07d00; --red: #d44c47; --green: #448361; --on-acc: #fff;
+      --shadow: 0 12px 40px rgba(15,15,15,.12);
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'Inter', ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
     button, input, select { font-family: inherit; color: inherit; }
     .app { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; overflow: hidden; container-type: inline-size; container-name: app; }
     button, a, [data-act] { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
     button:focus-visible, a:focus-visible, .sw-cu:focus-within { outline: 2px solid var(--acc); outline-offset: 2px; }
 
-    /* ===== Header — serif wordmark, underline tabs (buttons on the left,
+    /* ===== Header — plain title, Notion-style tabs (buttons on the left,
        clear of Notion's hover controls) ===== */
-    .hd { display: flex; align-items: center; gap: 10px; padding: 12px 14px 8px; flex-shrink: 0; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
-    .hd-l { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
-    .logo { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; border: 1.5px solid var(--acc); color: var(--acc); flex-shrink: 0; box-shadow: inset 0 0 0 2px var(--bg), inset 0 0 0 3px color-mix(in srgb, var(--acc) 45%, transparent); }
-    .logo svg { width: 12px; height: 12px; fill: currentColor; }
-    .hd-title { font-family: var(--serif); font-style: italic; font-weight: 600; font-size: 17px; white-space: nowrap; letter-spacing: .01em; }
+    .hd { display: flex; align-items: center; gap: 10px; padding: 12px 14px 10px; flex-shrink: 0; }
+    .hd-l { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+    .logo { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; background: color-mix(in srgb, var(--acc) 18%, transparent); color: var(--acc); flex-shrink: 0; }
+    .logo svg { width: 13px; height: 13px; fill: currentColor; }
+    .hd-title { font-weight: 700; font-size: 14px; white-space: nowrap; letter-spacing: -.01em; margin-right: 4px; }
     .seg { display: flex; gap: 2px; flex-shrink: 0; }
-    .seg button { border: none; background: none; font-size: 12px; font-weight: 600; padding: 6px 8px 5px; cursor: pointer; color: var(--sub); white-space: nowrap; border-bottom: 2px solid transparent; border-radius: 0; }
-    .seg button:hover { color: var(--text); }
-    .seg button.on { color: var(--text); border-bottom-color: var(--acc); }
-    .ib { width: 30px; height: 30px; border-radius: 50%; border: none; background: none; cursor: pointer; display: grid; place-items: center; color: var(--sub); flex-shrink: 0; transition: background .15s, color .15s; }
+    .seg button { border: none; background: none; font-size: 12.5px; font-weight: 500; padding: 5px 9px; cursor: pointer; color: var(--sub); white-space: nowrap; border-radius: 6px; transition: background .12s, color .12s; }
+    .seg button:hover { background: var(--card2); color: var(--text); }
+    .seg button.on { background: var(--card3); color: var(--text); font-weight: 600; }
+    .ib { width: 28px; height: 28px; border-radius: 6px; border: none; background: none; cursor: pointer; display: grid; place-items: center; color: var(--sub); flex-shrink: 0; transition: background .12s, color .12s; }
     .ib:hover { background: var(--card2); color: var(--text); }
     .ib svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-    .hd-scale { flex: 1 1 auto; min-width: 0; text-align: right; font-family: var(--serif); font-style: italic; font-size: 13px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hd-scale { flex: 1 1 auto; min-width: 0; text-align: right; font-size: 12px; font-weight: 500; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    .main { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 14px 14px; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--card3) transparent; display: flex; flex-direction: column; gap: 12px; }
+    .main { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 14px 14px; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--card3) transparent; display: flex; flex-direction: column; gap: 10px; }
     /* Cards keep their natural height and the column scrolls; without this a
        long list squashes collapsed semesters into each other. */
     .main > * { flex-shrink: 0; }
 
-    /* Ledger cards: a fine double rule, like a printed report card. */
-    .hero, .card, .sem { background: var(--card); border: 1px solid var(--line2); border-radius: 6px;
-      box-shadow: inset 0 0 0 3px var(--card), inset 0 0 0 4px var(--line); }
+    /* Flat cards with a hairline border — the way Notion draws callouts. */
+    .hero, .card, .sem { background: var(--card); border: 1px solid var(--line2); border-radius: 10px; }
+    [data-theme="dark"] .hero, [data-theme="dark"] .card, [data-theme="dark"] .sem { background: var(--card); }
 
-    /* ===== Hero — circular gauge ===== */
-    .hero { display: flex; align-items: center; gap: 18px; padding: 16px 18px; }
-    .gauge { position: relative; width: 124px; height: 124px; flex-shrink: 0; }
-    .gauge svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
-    .g-trk { fill: none; stroke: var(--card3); stroke-width: 7; }
-    .g-ticks { fill: none; stroke: var(--card); stroke-width: 9; stroke-dasharray: 1.2 31.47; }
-    .g-fill { fill: none; stroke: var(--acc); stroke-width: 7; stroke-linecap: round; transition: stroke-dashoffset .6s ease; }
-    .g-tgt line { stroke: var(--gold); stroke-width: 2.5; stroke-linecap: round; }
-    .g-c { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-    .g-val { font-family: var(--serif); font-weight: 700; font-size: 34px; line-height: 1; font-variant-numeric: lining-nums tabular-nums; }
-    .g-max { font-family: var(--serif); font-style: italic; font-size: 12px; color: var(--sub); margin-top: 3px; }
-    .h-info { flex: 1; min-width: 0; }
-    .h-lbl { font-family: var(--serif); font-style: italic; font-weight: 600; font-size: 18px; color: var(--text); }
-    .h-side { font-size: 12.5px; color: var(--sub); line-height: 1.6; margin-top: 4px; }
-    .h-side b { color: var(--text); font-family: var(--serif); font-size: 14px; }
+    /* ===== Hero — big number + thin bar ===== */
+    .hero { padding: 16px 18px 16px; }
+    .h-lbl { font-size: 12px; font-weight: 500; color: var(--sub); }
+    .h-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 2px; }
+    .h-big { display: flex; align-items: baseline; gap: 6px; }
+    .g-val { font-size: 52px; font-weight: 700; letter-spacing: -.035em; line-height: 1; font-variant-numeric: tabular-nums; }
+    .g-max { font-size: 14px; font-weight: 500; color: var(--faint); }
+    .h-side { font-size: 12.5px; color: var(--sub); line-height: 1.6; text-align: right; }
+    .h-side b { color: var(--text); font-weight: 600; }
     .up { color: var(--green); } .down { color: var(--red); }
-    .chips { display: flex; flex-wrap: wrap; gap: 5px 6px; margin-top: 10px; }
-    .chip { font-size: 10.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px; border: 1px solid var(--line2); color: var(--sub); white-space: nowrap; }
-    .chip.gold { color: var(--gold); border-color: color-mix(in srgb, var(--gold) 45%, transparent); }
+    .bar { position: relative; height: 6px; border-radius: 6px; background: var(--card3); margin-top: 14px; }
+    .bar-fill { position: absolute; inset: 0 auto 0 0; border-radius: 6px; background: var(--acc); transition: width .5s ease; }
+    .bar-tgt { position: absolute; top: -4px; bottom: -4px; width: 2px; border-radius: 2px; background: var(--text); opacity: .7; }
+    .chips { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; }
+    .chip { font-size: 12px; font-weight: 500; color: var(--sub); white-space: nowrap; }
+    .chip.gold { color: var(--acc); font-weight: 600; }
 
     /* ===== Cards ===== */
     .card { padding: 14px 16px; }
     .card-hd { display: flex; align-items: center; gap: 8px; }
-    .card-t { font-family: var(--serif); font-style: italic; font-weight: 600; font-size: 15px; color: var(--text); flex: 1; }
+    .card-t { font-size: 13.5px; font-weight: 600; color: var(--text); flex: 1; }
     .row-in { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; margin-top: 10px; }
-    .lbl { font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin-bottom: 5px; display: block; }
-    .in, .sel { width: 100%; min-width: 0; background: var(--card2); border: 1px solid var(--line2); border-radius: 5px; padding: 8px 10px; font-size: 12.5px; color: var(--text); outline: none; transition: border-color .15s; font-variant-numeric: tabular-nums; }
-    .in:focus, .sel:focus { border-color: var(--acc); }
-    .in.invalid, .in.invalid:focus { border-color: var(--red); background: color-mix(in srgb, var(--red) 8%, var(--card2)); }
+    .lbl { font-size: 11.5px; font-weight: 500; color: var(--sub); margin-bottom: 5px; display: block; }
+    .in, .sel { width: 100%; min-width: 0; background: var(--card2); border: 1px solid var(--line2); border-radius: 6px; padding: 7px 10px; font-size: 13px; color: var(--text); outline: none; transition: border-color .12s, box-shadow .12s; font-variant-numeric: tabular-nums; }
+    .in:focus, .sel:focus { border-color: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 20%, transparent); }
+    .in.invalid, .in.invalid:focus { border-color: var(--red); box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 18%, transparent); }
     .in::placeholder { color: var(--faint); }
     [data-theme="dark"] .in, [data-theme="dark"] .sel { color-scheme: dark; }
     .in[type=number] { -moz-appearance: textfield; }
     .in[type=number]::-webkit-outer-spin-button, .in[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-    .out { margin-top: 12px; padding: 10px 0 2px; border-top: 1px dashed var(--line2); font-size: 12.5px; line-height: 1.55; color: var(--sub); }
-    .out b { color: var(--text); }
-    .out .big { font-family: var(--serif); font-weight: 700; font-size: 28px; color: var(--acc); line-height: 1.15; display: block; font-variant-numeric: lining-nums tabular-nums; }
+    .out { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: var(--card2); font-size: 12.5px; line-height: 1.55; color: var(--sub); }
+    .out b { color: var(--text); font-weight: 600; }
+    .out .big { font-size: 26px; font-weight: 700; letter-spacing: -.02em; color: var(--text); line-height: 1.2; display: block; font-variant-numeric: tabular-nums; }
+    .out.ok { background: color-mix(in srgb, var(--green) 12%, var(--card2)); }
     .out.ok .big { color: var(--green); }
+    .out.bad { background: color-mix(in srgb, var(--red) 10%, var(--card2)); }
     .out.bad .big { color: var(--red); }
-    .hint { font-size: 11.5px; color: var(--faint); line-height: 1.5; }
+    .hint { font-size: 12px; color: var(--faint); line-height: 1.5; }
     .hint b { color: var(--sub); }
 
     /* ===== Semester table ===== */
@@ -140,16 +141,16 @@
     .sem-hd { display: flex; align-items: center; gap: 6px; padding: 8px 10px 8px 6px; }
     .sem-hd .chev svg { transition: transform .18s; }
     .sem.open .sem-hd .chev svg { transform: rotate(90deg); }
-    .sem-name { flex: 1; min-width: 0; background: none; border: 1px solid transparent; border-radius: 5px; padding: 5px 6px; font-family: var(--serif); font-size: 15.5px; font-weight: 600; outline: none; }
+    .sem-name { flex: 1; min-width: 0; background: none; border: 1px solid transparent; border-radius: 6px; padding: 5px 6px; font-size: 14px; font-weight: 600; outline: none; }
     .sem-name:hover { border-color: var(--line2); }
     .sem-name:focus { border-color: var(--acc); background: var(--card2); }
-    .sem-gpa { font-family: var(--serif); font-weight: 700; font-size: 19px; color: var(--acc); white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
-    .sem-gpa.none { font-family: var(--serif); font-style: italic; font-weight: 500; font-size: 12.5px; color: var(--faint); }
+    .sem-gpa { font-weight: 700; font-size: 16px; letter-spacing: -.01em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .sem-gpa.none { font-weight: 500; font-size: 12px; color: var(--faint); }
     .sem-cr { font-size: 11px; font-weight: 600; color: var(--faint); white-space: nowrap; min-width: 44px; text-align: right; }
-    .sem-body { display: none; padding: 0 12px 12px; border-top: 1px dashed var(--line2); margin: 0 4px; }
+    .sem-body { display: none; padding: 0 12px 12px; border-top: 1px solid var(--line); }
     .sem.open .sem-body { display: block; }
     .crs-hd, .crs { display: grid; grid-template-columns: minmax(0,1fr) 64px 132px 30px; gap: 8px; align-items: center; }
-    .crs-hd { padding: 8px 2px 4px; font-size: 9.5px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+    .crs-hd { padding: 10px 2px 4px; font-size: 11.5px; font-weight: 500; color: var(--faint); }
     .crs { padding: 3px 0; }
     .crs .in, .crs .sel { padding: 7px 8px; }
     .crs .c-gr.ip { color: var(--faint); }
@@ -158,15 +159,14 @@
     .c-crw .in { padding-right: 26px; }
     .c-crw span { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); font-size: 11px; font-weight: 600; color: var(--faint); pointer-events: none; }
     .crs.bad .c-gr { border-color: var(--red); }
-    .addc { margin-top: 8px; width: 100%; border: 1px dashed var(--line2); background: none; border-radius: 5px; padding: 8px; font-size: 12px; font-weight: 600; color: var(--sub); cursor: pointer; }
+    .addc { margin-top: 8px; width: 100%; border: 1px dashed var(--line2); background: none; border-radius: 6px; padding: 8px; font-size: 12px; font-weight: 600; color: var(--sub); cursor: pointer; }
     .addc:hover { color: var(--text); border-color: var(--acc); }
-    .add-sem { border: 1px dashed var(--line2); background: none; border-radius: 6px; padding: 12px; font-family: var(--serif); font-style: italic; font-size: 14px; font-weight: 600; color: var(--sub); cursor: pointer; }
+    .add-sem { border: 1px dashed var(--line2); background: none; border-radius: 10px; padding: 11px; font-size: 13px; font-weight: 500; color: var(--sub); cursor: pointer; }
     .add-sem:hover { color: var(--text); border-color: var(--acc); }
 
     /* ===== Final-exam tab ===== */
     .tbl { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
-    .tbl td { padding: 7px 4px; border-top: 1px dotted var(--line2); font-variant-numeric: tabular-nums; }
-    .tbl td:last-child { font-family: var(--serif); }
+    .tbl td { padding: 7px 4px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
     .tbl td:last-child { text-align: right; font-weight: 700; }
     .tbl tr.no td:last-child { color: var(--red); }
     .tbl tr.yes td:last-child { color: var(--green); }
@@ -174,10 +174,10 @@
     /* ===== Empty state ===== */
     .empty { text-align: center; padding: 26px 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
     .empty-ic { font-size: 34px; }
-    .empty h3 { font-family: var(--serif); font-style: italic; font-size: 20px; font-weight: 600; }
+    .empty h3 { font-size: 16px; font-weight: 700; }
     .empty p { font-size: 12.5px; color: var(--sub); max-width: 300px; line-height: 1.5; }
     .btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-    .btn { border: none; border-radius: 5px; padding: 8px 14px; font-size: 12px; font-weight: 600; cursor: pointer; background: var(--card3); color: var(--text); }
+    .btn { border: none; border-radius: 6px; padding: 8px 14px; font-size: 12px; font-weight: 600; cursor: pointer; background: var(--card3); color: var(--text); }
     .btn:hover { filter: brightness(1.12); }
     .btn.pri { background: var(--acc); color: var(--on-acc); }
     .btn.sm { padding: 6px 10px; font-size: 11.5px; }
@@ -191,9 +191,9 @@
     .panel { position: absolute; inset: 0; z-index: 50; background: var(--bg); display: flex; flex-direction: column; opacity: 0; pointer-events: none; transform: translateY(10px); visibility: hidden; transition: opacity .22s, transform .22s, visibility 0s linear .22s; }
     .panel.open { opacity: 1; pointer-events: auto; transform: none; visibility: visible; transition-delay: 0s; }
     .p-hd { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
-    .p-hd span { font-family: var(--serif); font-style: italic; font-weight: 600; font-size: 17px; flex: 1; }
+    .p-hd span { font-weight: 700; font-size: 14px; flex: 1; }
     .p-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--card3) transparent; }
-    .box { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .box { background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
     .tg { display: flex; background: var(--card2); border: 1px solid var(--line); border-radius: 6px; padding: 2px; }
     .tg button { flex: 1; border: none; background: none; padding: 6px 4px; font-size: 11.5px; font-weight: 600; border-radius: 4px; cursor: pointer; color: var(--sub); white-space: nowrap; }
     .tg button.on { background: var(--card3); color: var(--text); }
@@ -238,9 +238,8 @@
     @container app (max-width: 380px) {
       .hd { padding: 10px 10px 8px; gap: 6px; }
       .main { padding: 2px 10px 12px; }
-      .hero { flex-direction: column; align-items: stretch; text-align: center; gap: 10px; }
-      .gauge { margin: 0 auto; }
-      .chips { justify-content: center; }
+      .g-val { font-size: 44px; }
+      .h-side { text-align: left; }
     }
     @media (pointer: coarse) {
       .ib { width: 36px; height: 36px; }
@@ -259,7 +258,7 @@
     <header class="hd">
       <div class="hd-l">
         <div class="logo"><svg viewBox="0 0 24 24"><path d="M12 3L1 9l11 6 9-4.9V17h2V9L12 3zm-6 9.2V16c0 1.7 2.7 3 6 3s6-1.3 6-3v-3.8l-6 3.3-6-3.3z"/></svg></div>
-        <span class="hd-title">Gradebook</span>
+        <span class="hd-title">GPA</span>
         <div class="seg" id="viewSeg"><button data-v="overview"><span class="lg">Overview</span><span class="sh">Grades</span></button><button data-v="final"><span class="lg">Final exam</span><span class="sh">Final</span></button></div>
         <button class="ib" id="addSemBtn" title="Add a semester"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
         <button class="ib" id="gearBtn" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg></button>
@@ -338,14 +337,14 @@
     '10':{name:'10-point CGPA', short:'CGPA', semShort:'SGPA', max:10, grades:[['O',10],['A+',9],['A',8],['B+',7],['B',6],['C',5],['P',4],['F',0]]},
     'pct':{name:'Percentage', short:'Average', max:100, numeric:true}
   };
-  const ACCENTS=['#d4a853','#b5525c','#7fa37a','#6f8fc0','#9a7bb5','#c07a4a'];   // gold, burgundy, sage, ink blue, plum, copper
+  const ACCENTS=['#4dab9a','#529cca','#9a6dd7','#d9730d','#e255a1','#dfab01'];   // Notion's green, blue, purple, orange, pink, yellow
 
   /* ==========================================================================
      2. STATE & PERSISTENCE
      ========================================================================== */
   const INSTANCE=new URLSearchParams(location.search).get('instance')||'default';
   const KEY='gpa1_'+INSTANCE;
-  const DEF={theme:'dark',accent:'#d4a853',scale:'4',dec:2,zoom:100,view:'overview',
+  const DEF={theme:'dark',accent:'#4dab9a',scale:'4',dec:2,zoom:100,view:'overview',
     target:'',remaining:'',priorGpa:'',priorCr:'',fCur:'',fWeight:'',fTarget:''};
   let S={...DEF};
   let D={sems:[]};
@@ -511,8 +510,7 @@
     x:'<svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>'
   };
   function semLabel(){ return scale().semShort||scale().short; }
-  function maxLbl(){ return S.scale==='pct'?'per cent':'out of '+scale().max.toFixed(S.scale==='4'?1:0); }
-  const GC=2*Math.PI*52;      // gauge circumference
+  function maxLbl(){ return S.scale==='pct'?'%':'/ '+scale().max.toFixed(S.scale==='4'?1:0); }
 
   function render(){
     document.querySelectorAll('#viewSeg button').forEach(b=>{ const on=b.dataset.v===S.view; b.classList.toggle('on',on); b.setAttribute('aria-pressed',on); });
@@ -543,23 +541,14 @@
     // The bar starts at its real value so redraws (adding a course) don't
     // replay the fill animation from empty.
     const w=isFinite(o.gpa)?Math.min(100,o.gpa/sc.max*100):0;
-    // Gauge: a ring of circumference GC, split into 10 by tick gaps; the
-    // target is a gold tick on the ring.
     let h=`<div class="hero">
-      <div class="gauge">
-        <svg viewBox="0 0 120 120" aria-hidden="true">
-          <circle class="g-trk" cx="60" cy="60" r="52"/>
-          <circle class="g-fill" id="gFill" cx="60" cy="60" r="52" stroke-dasharray="${GC.toFixed(2)}" stroke-dashoffset="${(GC*(1-w/100)).toFixed(2)}"/>
-          <circle class="g-ticks" cx="60" cy="60" r="52"/>
-          <g class="g-tgt" id="gTgt" hidden><line x1="113" y1="60" x2="121" y2="60"/></g>
-        </svg>
-        <div class="g-c"><span class="g-val" id="hVal">—</span><span class="g-max">${esc(maxLbl())}</span></div>
-      </div>
-      <div class="h-info">
-        <div class="h-lbl">Cumulative ${esc(sc.short)}</div>
+      <div class="h-lbl">Cumulative ${esc(sc.short)}</div>
+      <div class="h-row">
+        <div class="h-big"><span class="g-val" id="hVal">—</span><span class="g-max">${esc(maxLbl())}</span></div>
         <div class="h-side" id="hSide"></div>
-        <div class="chips" id="hChips"></div>
       </div>
+      <div class="bar"><div class="bar-fill" id="hBar" style="width:${w.toFixed(1)}%"></div><div class="bar-tgt" id="hTgt" hidden title="Target"></div></div>
+      <div class="chips" id="hChips"></div>
     </div>`;
 
     // Target planner
@@ -614,10 +603,9 @@
     const sc=scale(), o=overall();
     if(!$('hVal')) return;
     $('hVal').textContent=fmt(o.gpa);
-    const frac=isFinite(o.gpa)?Math.min(1,o.gpa/sc.max):0;
-    $('gFill').setAttribute('stroke-dashoffset',(GC*(1-frac)).toFixed(2));
+    $('hBar').style.width=(isFinite(o.gpa)?Math.min(100,o.gpa/sc.max*100):0).toFixed(1)+'%';
     const t=num(S.target);
-    const tg=$('gTgt'); tg.hidden=!(isFinite(t)&&t<=sc.max); if(!tg.hidden) tg.setAttribute('transform',`rotate(${(t/sc.max*360).toFixed(2)} 60 60)`);
+    const tg=$('hTgt'); tg.hidden=!(isFinite(t)&&t<=sc.max); if(!tg.hidden) tg.style.left=`calc(${(t/sc.max*100).toFixed(2)}% - 1px)`;
 
     // Latest graded semester and the change it made.
     let side='';
