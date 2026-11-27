@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPA Calculator</title>
+
+  <!--
+    ============================================================================
+    GPA CALCULATOR  —  self-contained GPA / CGPA widget for Notion (/embed)
+    ============================================================================
+    • Dark XP look (matches the Dark XP Student Planner and the Timetable
+      widget), with Light + Auto.
+    • Grading scales: 4.0 GPA (default, A+ … F with +/-), 10-point CGPA
+      (O, A+, A, B+, B, C, P, F) and Percentage (marks out of 100).
+    • Semesters of courses (name, credits, grade) edited inline; semester GPA
+      and cumulative GPA update as you type. Courses without a grade yet count
+      as "in progress"; W (withdrawn) is left out of the GPA.
+    • Earlier record: start from a previous GPA + credits instead of typing
+      every past course.
+    • Target planner: the average you need in your remaining credits to reach
+      a target GPA. Final-exam tab: the score you need on a final to reach a
+      target course grade.
+    • Data saved to localStorage ('gpa1_<instance>'); a portable link (#d=…)
+      carries everything to other devices; backup / restore; two open copies
+      stay in sync; warns when the browser won't let the embed save.
+
+    DATA MODEL
+      D.sems [{id,name,open,courses:[{id,name,credits,grade}]}]
+        grade: '' (in progress), 'W' (withdrawn), a letter from the scale, or
+               a number 0–100 (as a string) on the Percentage scale.
+      S      settings + target / earlier record / final-exam inputs
+
+    SECTIONS
+      <style>   tokens · header · hero · cards · semester table · final tab ·
+                panels · forms · phone/touch
+      <body>    header, main view, footer, settings panel, copy fallback, toast
+      <script>  scales · state · helpers · maths · rendering · inline editing
+                · target · final exam · settings · portable link · init
+    ============================================================================
+  -->
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;1,500;1,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    /* ===== Tokens — "Dark Academia": espresso + parchment, gold ink =====
+       Deliberately different from the Timetable's cool purple XP look. */
+    :root { --acc: #d4a853; --serif: 'Playfair Display', Georgia, 'Times New Roman', serif; }
+    [data-theme="dark"] {
+      --bg: #13100d; --card: #1b1712; --card2: #241e18; --card3: #30281f;
+      --line: rgba(232,212,176,.09); --line2: rgba(232,212,176,.17);
+      --text: #f1e7d5; --sub: rgba(241,231,213,.66); --faint: rgba(241,231,213,.38);
+      --gold: #d9b66b; --red: #e08377; --green: #9cc492; --on-acc: #1b1712;
+      --shadow: 0 14px 44px rgba(0,0,0,.6);
+    }
+    [data-theme="light"] {
+      --bg: #f1e8d8; --card: #fbf6ec; --card2: #f3ead9; --card3: #e8dcc5;
+      --line: rgba(74,52,24,.12); --line2: rgba(74,52,24,.22);
+      --text: #2b2117; --sub: rgba(43,33,23,.70); --faint: rgba(43,33,23,.45);
+      --gold: #8a5a12; --red: #a8473d; --green: #3f7a44; --on-acc: #fffaf0;
+      --shadow: 0 14px 44px rgba(74,52,24,.18);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+    button, input, select { font-family: inherit; color: inherit; }
+    .app { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; overflow: hidden; container-type: inline-size; container-name: app; }
+    button, a, [data-act] { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    button:focus-visible, a:focus-visible, .sw-cu:focus-within { outline: 2px solid var(--acc); outline-offset: 2px; }
+
+    /* ===== Header — serif wordmark, underline tabs (buttons on the left,
+       clear of Notion's hover controls) ===== */
+    .hd { display: flex; align-items: center; gap: 10px; padding: 12px 14px 8px; flex-shrink: 0; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+    .hd-l { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+    .logo { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; border: 1.5px solid var(--acc); color: var(--acc); flex-shrink: 0; box-shadow: inset 0 0 0 2px var(--bg), inset 0 0 0 3px color-mix(in srgb, var(--acc) 45%, transparent); }
+    .logo svg { width: 12px; height: 12px; fill: currentColor; }
+    .hd-title { font-family: var(--serif); font-style: italic; font-weight: 600; font-size: 17px; white-space: nowrap; letter-spacing: .01em; }
+    .seg { display: flex; gap: 2px; flex-shrink: 0; }
+    .seg button { border: none; background: none; font-size: 12px; font-weight: 600; padding: 6px 8px 5px; cursor: pointer; color: var(--sub); white-space: nowrap; border-bottom: 2px solid transparent; border-radius: 0; }
+    .seg button:hover { color: var(--text); }
+    .seg button.on { color: var(--text); border-bottom-color: var(--acc); }
+    .ib { width: 30px; height: 30px; border-radius: 50%; border: none; background: none; cursor: pointer; display: grid; place-items: center; color: var(--sub); flex-shrink: 0; transition: background .15s, color .15s; }
+    .ib:hover { background: var(--card2); color: var(--text); }
+    .ib svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .hd-scale { flex: 1 1 auto; min-width: 0; text-align: right; font-family: var(--serif); font-style: italic; font-size: 13px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .main { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 14px 14px; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--card3) transparent; display: flex; flex-direction: column; gap: 12px; }
+    /* Cards keep their natural height and the column scrolls; without this a
+       long list squashes collapsed semesters into each other. */
+    .main > * { flex-shrink: 0; }
+
+    /* Ledger cards: a fine double rule, like a printed report card. */
+    .hero, .card, .sem { background: var(--card); border: 1px solid var(--line2); border-radius: 6px;
+      box-shadow: inset 0 0 0 3px var(--card), inset 0 0 0 4px var(--line); }
+
+    /* ===== Hero — circular gauge ===== */
+    .hero { display: flex; align-items: center; gap: 18px; padding: 16px 18px; }
+    .gauge { position: relative; width: 124px; height: 124px; flex-shrink: 0; }
+    .gauge svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+    .g-trk { fill: none; stroke: var(--card3); stroke-width: 7; }
+    .g-ticks { fill: none; stroke: var(--card); stroke-width: 9; stroke-dasharray: 1.2 31.47; }
+    .g-fill { fill: none; stroke: var(--acc); stroke-width: 7; stroke-linecap: round; transition: stroke-dashoffset .6s ease; }
+    .g-tgt line { stroke: var(--gold); stroke-width: 2.5; stroke-linecap: round; }
+    .g-c { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+    .g-val { font-family: var(--serif); font-weight: 700; font-size: 34px; line-height: 1; font-variant-numeric: lining-nums tabular-nums; }
+    .g-max { font-family: var(--serif); font-style: italic; font-size: 12px; color: var(--sub); margin-top: 3px; }
+    .h-info { flex: 1; min-width: 0; }
+    .h-lbl { font-family: var(--serif); font-style: italic; font-weight: 600; font-size: 18px; color: var(--text); }
+    .h-side { font-size: 12.5px; color: var(--sub); line-height: 1.6; margin-top: 4px; }
+    .h-side b { color: var(--text); font-family: var(--serif); font-size: 14px; }
+    .up { color: var(--green); } .down { color: var(--red); }
+    .chips { display: flex; flex-wrap: wrap; gap: 5px 6px; margin-top: 10px; }
+    .chip { font-size: 10.5px; font-weight: 600; padding: 3px 9px; border-radius: 20px; border: 1px solid var(--line2); color: var(--sub); white-space: nowrap; }
+    .chip.gold { color: var(--gold); border-color: color-mix(in srgb, var(--gold) 45%, transparent); }
+
+    /* ===== Cards ===== */
+    .card { padding: 14px 16px; }
+    .card-hd { display: flex; align-items: center; gap: 8px; }
+    .card-t { font-family: var(--serif); font-style: italic; font-weight: 600; font-size: 15px; color: var(--text); flex: 1; }
+    .row-in { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 10px; margin-top: 10px; }
+    .lbl { font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin-bottom: 5px; display: block; }
+    .in, .sel { width: 100%; min-width: 0; background: var(--card2); border: 1px solid var(--line2); border-radius: 5px; padding: 8px 10px; font-size: 12.5px; color: var(--text); outline: none; transition: border-color .15s; font-variant-numeric: tabular-nums; }
+    .in:focus, .sel:focus { border-color: var(--acc); }
+    .in.invalid, .in.invalid:focus { border-color: var(--red); background: color-mix(in srgb, var(--red) 8%, var(--card2)); }
+    .in::placeholder { color: var(--faint); }
+    [data-theme="dark"] .in, [data-theme="dark"] .sel { color-scheme: dark; }
+    .in[type=number] { -moz-appearance: textfield; }
+    .in[type=number]::-webkit-outer-spin-button, .in[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .out { margin-top: 12px; padding: 10px 0 2px; border-top: 1px dashed var(--line2); font-size: 12.5px; line-height: 1.55; color: var(--sub); }
+    .out b { color: var(--text); }
+    .out .big { font-family: var(--serif); font-weight: 700; font-size: 28px; color: var(--acc); line-height: 1.15; display: block; font-variant-numeric: lining-nums tabular-nums; }
+    .out.ok .big { color: var(--green); }
+    .out.bad .big { color: var(--red); }
+    .hint { font-size: 11.5px; color: var(--faint); line-height: 1.5; }
+    .hint b { color: var(--sub); }
+
+    /* ===== Semester table ===== */
+    .sem { overflow: hidden; }
+    .sem-hd { display: flex; align-items: center; gap: 6px; padding: 8px 10px 8px 6px; }
+    .sem-hd .chev svg { transition: transform .18s; }
+    .sem.open .sem-hd .chev svg { transform: rotate(90deg); }
+    .sem-name { flex: 1; min-width: 0; background: none; border: 1px solid transparent; border-radius: 5px; padding: 5px 6px; font-family: var(--serif); font-size: 15.5px; font-weight: 600; outline: none; }
+    .sem-name:hover { border-color: var(--line2); }
+    .sem-name:focus { border-color: var(--acc); background: var(--card2); }
+    .sem-gpa { font-family: var(--serif); font-weight: 700; font-size: 19px; color: var(--acc); white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
+    .sem-gpa.none { font-family: var(--serif); font-style: italic; font-weight: 500; font-size: 12.5px; color: var(--faint); }
+    .sem-cr { font-size: 11px; font-weight: 600; color: var(--faint); white-space: nowrap; min-width: 44px; text-align: right; }
+    .sem-body { display: none; padding: 0 12px 12px; border-top: 1px dashed var(--line2); margin: 0 4px; }
+    .sem.open .sem-body { display: block; }
+    .crs-hd, .crs { display: grid; grid-template-columns: minmax(0,1fr) 64px 132px 30px; gap: 8px; align-items: center; }
+    .crs-hd { padding: 8px 2px 4px; font-size: 9.5px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+    .crs { padding: 3px 0; }
+    .crs .in, .crs .sel { padding: 7px 8px; }
+    .crs .c-gr.ip { color: var(--faint); }
+    /* Credits box carries a small "cr" unit so it reads clearly on phones too. */
+    .c-crw { position: relative; display: block; min-width: 0; }
+    .c-crw .in { padding-right: 26px; }
+    .c-crw span { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); font-size: 11px; font-weight: 600; color: var(--faint); pointer-events: none; }
+    .crs.bad .c-gr { border-color: var(--red); }
+    .addc { margin-top: 8px; width: 100%; border: 1px dashed var(--line2); background: none; border-radius: 5px; padding: 8px; font-size: 12px; font-weight: 600; color: var(--sub); cursor: pointer; }
+    .addc:hover { color: var(--text); border-color: var(--acc); }
+    .add-sem { border: 1px dashed var(--line2); background: none; border-radius: 6px; padding: 12px; font-family: var(--serif); font-style: italic; font-size: 14px; font-weight: 600; color: var(--sub); cursor: pointer; }
+    .add-sem:hover { color: var(--text); border-color: var(--acc); }
+
+    /* ===== Final-exam tab ===== */
+    .tbl { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+    .tbl td { padding: 7px 4px; border-top: 1px dotted var(--line2); font-variant-numeric: tabular-nums; }
+    .tbl td:last-child { font-family: var(--serif); }
+    .tbl td:last-child { text-align: right; font-weight: 700; }
+    .tbl tr.no td:last-child { color: var(--red); }
+    .tbl tr.yes td:last-child { color: var(--green); }
+
+    /* ===== Empty state ===== */
+    .empty { text-align: center; padding: 26px 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .empty-ic { font-size: 34px; }
+    .empty h3 { font-family: var(--serif); font-style: italic; font-size: 20px; font-weight: 600; }
+    .empty p { font-size: 12.5px; color: var(--sub); max-width: 300px; line-height: 1.5; }
+    .btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    .btn { border: none; border-radius: 5px; padding: 8px 14px; font-size: 12px; font-weight: 600; cursor: pointer; background: var(--card3); color: var(--text); }
+    .btn:hover { filter: brightness(1.12); }
+    .btn.pri { background: var(--acc); color: var(--on-acc); }
+    .btn.sm { padding: 6px 10px; font-size: 11.5px; }
+    .link { background: none; border: none; color: var(--sub); font-size: 11.5px; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+
+    .ft { flex-shrink: 0; display: flex; gap: 8px; padding: 0 14px 10px; flex-wrap: wrap; }
+    .ft:empty { display: none; }
+    .warn { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px; border: none; cursor: pointer; color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); text-align: left; }
+
+    /* ===== Panels ===== */
+    .panel { position: absolute; inset: 0; z-index: 50; background: var(--bg); display: flex; flex-direction: column; opacity: 0; pointer-events: none; transform: translateY(10px); visibility: hidden; transition: opacity .22s, transform .22s, visibility 0s linear .22s; }
+    .panel.open { opacity: 1; pointer-events: auto; transform: none; visibility: visible; transition-delay: 0s; }
+    .p-hd { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+    .p-hd span { font-family: var(--serif); font-style: italic; font-weight: 600; font-size: 17px; flex: 1; }
+    .p-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--card3) transparent; }
+    .box { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .tg { display: flex; background: var(--card2); border: 1px solid var(--line); border-radius: 6px; padding: 2px; }
+    .tg button { flex: 1; border: none; background: none; padding: 6px 4px; font-size: 11.5px; font-weight: 600; border-radius: 4px; cursor: pointer; color: var(--sub); white-space: nowrap; }
+    .tg button.on { background: var(--card3); color: var(--text); }
+    .sw-row { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+    .sw { width: 24px; height: 24px; padding: 0; border-radius: 50%; border: 2px solid transparent; cursor: pointer; background: var(--c); }
+    .sw.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg) inset; }
+    .sw-cu { position: relative; width: 24px; height: 24px; border-radius: 50%; overflow: hidden; background: conic-gradient(#f87171, #fbbf24, #34d399, #22d3ee, #818cf8, #e879f9, #f87171); cursor: pointer; border: 2px solid transparent; }
+    .sw-cu.on { border-color: var(--text); }
+    .sw-cu input { position: absolute; inset: -6px; opacity: 0; cursor: pointer; width: 40px; height: 40px; }
+    .zr { display: flex; align-items: center; gap: 10px; }
+    .zr input { flex: 1; accent-color: var(--acc); }
+    .zr span { font-size: 11.5px; font-weight: 600; color: var(--sub); min-width: 38px; text-align: right; }
+    .ta { width: 100%; min-height: 110px; resize: vertical; background: var(--card); border: 1px solid var(--line2); border-radius: 9px; padding: 8px 10px; font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; color: var(--text); outline: none; }
+    .ta:focus { border-color: var(--acc); }
+    .err { font-size: 11.5px; color: var(--red); font-weight: 500; line-height: 1.5; }
+    .scale-tbl { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 4px; }
+    .scale-tbl span { font-size: 11px; padding: 4px 6px; border-radius: 6px; background: var(--card2); color: var(--sub); text-align: center; font-variant-numeric: tabular-nums; }
+    .scale-tbl b { color: var(--text); }
+
+    .toast { position: absolute; left: 50%; bottom: 14px; transform: translate(-50%, 20px); background: var(--card3); color: var(--text); font-size: 12px; font-weight: 600; padding: 8px 12px; border-radius: 10px; box-shadow: var(--shadow); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 100; width: max-content; max-width: calc(100% - 24px); display: flex; align-items: center; gap: 10px; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+    .toast button { border: none; background: none; color: var(--acc); font-weight: 700; font-size: 12px; cursor: pointer; padding: 2px 4px; }
+
+    /* ===== Narrow embeds / phones ===== */
+    @container app (max-width: 480px) {
+      .hd-title, .hd-scale { display: none; }
+      /* Course rows stack: name on top, credits + grade + delete below. */
+      .crs-hd { display: none; }
+      .crs { grid-template-columns: minmax(0,1fr) minmax(0,1fr) 34px; grid-template-areas: "n n n" "c g d"; padding: 6px 0; border-bottom: 1px solid var(--line); }
+      .crs .c-name { grid-area: n; } .crs .c-crw { grid-area: c; } .crs .c-gr { grid-area: g; } .crs .c-del { grid-area: d; }
+      .row-in { grid-template-columns: minmax(0,1fr); }
+    }
+    .seg .sh { display: none; }
+    /* Very tight (narrow embed and/or high zoom): short tab names, no logo,
+       so the Settings button always stays on screen. */
+    @container app (max-width: 300px) {
+      .logo { display: none; }
+      .seg .lg { display: none; } .seg .sh { display: inline; }
+      .seg button { padding-left: 8px; padding-right: 8px; }
+      .hd-l { gap: 4px; }
+    }
+    @container app (max-width: 380px) {
+      .hd { padding: 10px 10px 8px; gap: 6px; }
+      .main { padding: 2px 10px 12px; }
+      .hero { flex-direction: column; align-items: stretch; text-align: center; gap: 10px; }
+      .gauge { margin: 0 auto; }
+      .chips { justify-content: center; }
+    }
+    @media (pointer: coarse) {
+      .ib { width: 36px; height: 36px; }
+      .seg button { padding: 8px 11px; font-size: 12px; }
+      .tg button { padding: 9px 4px; font-size: 12px; }
+      .btn { padding: 10px 16px; font-size: 13px; }
+      .sw, .sw-cu { width: 30px; height: 30px; }
+      .in, .sel, .sem-name { font-size: 16px; }    /* stops iOS zooming in on focus */
+      .ta { font-size: 14px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app" id="app">
+    <header class="hd">
+      <div class="hd-l">
+        <div class="logo"><svg viewBox="0 0 24 24"><path d="M12 3L1 9l11 6 9-4.9V17h2V9L12 3zm-6 9.2V16c0 1.7 2.7 3 6 3s6-1.3 6-3v-3.8l-6 3.3-6-3.3z"/></svg></div>
+        <span class="hd-title">Gradebook</span>
+        <div class="seg" id="viewSeg"><button data-v="overview"><span class="lg">Overview</span><span class="sh">Grades</span></button><button data-v="final"><span class="lg">Final exam</span><span class="sh">Final</span></button></div>
+        <button class="ib" id="addSemBtn" title="Add a semester"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button class="ib" id="gearBtn" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg></button>
+      </div>
+      <span class="hd-scale" id="hdScale"></span>
+    </header>
+
+    <main class="main" id="main"></main>
+    <footer class="ft" id="ft"></footer>
+
+    <!-- ===== Settings ===== -->
+    <div class="panel" id="pSet" role="dialog" aria-label="Settings">
+      <div class="p-hd"><span>Settings</span><button class="ib" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+      <div class="p-body">
+        <div class="box">
+          <label class="lbl" style="margin:0">Grading scale</label>
+          <div class="tg" id="sScale"><button data-v="4">4.0 GPA</button><button data-v="10">10-point</button><button data-v="pct">Percentage</button></div>
+          <div class="err" id="sScaleWarn"></div>
+          <div class="scale-tbl" id="sScaleTbl"></div>
+        </div>
+        <div class="box">
+          <label class="lbl" style="margin:0">Earlier record (optional)</label>
+          <div class="hint">Already have a GPA from earlier semesters? Enter it here instead of typing every old course.</div>
+          <div class="row-in" style="margin-top:0">
+            <div><label class="lbl" for="sPriorGpa" id="sPriorLbl">Earlier GPA</label><input class="in" id="sPriorGpa" type="number" inputmode="decimal" step="0.01" min="0" placeholder="e.g. 3.40"></div>
+            <div><label class="lbl" for="sPriorCr">Credits it covers</label><input class="in" id="sPriorCr" type="number" inputmode="decimal" step="0.5" min="0" placeholder="e.g. 60"></div>
+          </div>
+          <div class="err" id="sPriorErr"></div>
+        </div>
+        <div><label class="lbl">Theme</label><div class="tg" id="sTheme"><button data-v="auto">Auto</button><button data-v="dark">Dark</button><button data-v="light">Light</button></div></div>
+        <div><label class="lbl">Accent</label><div class="sw-row" id="sAccent"></div></div>
+        <div class="row-in" style="margin-top:0">
+          <div><label class="lbl">Decimals</label><div class="tg" id="sDec"><button data-v="2">2</button><button data-v="3">3</button></div></div>
+          <div><label class="lbl">Zoom</label><div class="zr"><input type="range" id="sZoom" min="70" max="140" step="5"><span id="sZoomL"></span></div></div>
+        </div>
+        <div class="box">
+          <label class="lbl" style="margin:0">Your data</label>
+          <div class="hint">Notion keeps widget data per device. To see the same grades on your phone and laptop, copy the <b>portable link</b> and use it as the embed link.</div>
+          <div class="btns" style="justify-content:flex-start">
+            <button class="btn pri sm" id="sPortable">Copy portable link</button>
+            <button class="btn sm" id="sBackup">Copy backup</button>
+            <button class="btn sm" id="sRestoreBtn">Restore…</button>
+          </div>
+          <div id="sRestoreWrap" hidden>
+            <textarea class="ta" id="sRestore" spellcheck="false" placeholder="Paste a backup here"></textarea>
+            <div class="err" id="sRestoreErr"></div>
+            <div class="btns" style="justify-content:flex-start;margin-top:8px"><button class="btn pri sm" id="sRestoreGo">Restore backup</button></div>
+          </div>
+        </div>
+        <div class="btns" style="justify-content:flex-start">
+          <button class="link" id="sSample">Load sample grades</button>
+          <button class="link" id="sClear">Clear all grades</button>
+          <button class="link" id="sReset">Reset settings</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Manual-copy fallback (when the embed blocks the clipboard) ===== -->
+    <div class="panel" id="pCopy" style="z-index:60" role="dialog" aria-label="Copy">
+      <div class="p-hd"><span id="cpTitle">Copy this</span><button class="ib" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+      <div class="p-body">
+        <div class="hint">This page doesn't allow automatic copying. The text below is selected — press <b>Ctrl + C</b> (or <b>⌘ + C</b>), or long-press it on a phone and choose <b>Copy</b>.</div>
+        <textarea class="ta" id="cpText" readonly spellcheck="false" style="min-height:200px"></textarea>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status"><span id="toastMsg"></span><button id="toastBtn" hidden></button></div>
+  </div>
+
+  <script>
+  /* ==========================================================================
+     1. GRADING SCALES
+     ========================================================================== */
+  const SCALES={
+    '4':{name:'4.0 GPA', short:'GPA', max:4, grades:[['A+',4.0],['A',4.0],['A-',3.7],['B+',3.3],['B',3.0],['B-',2.7],['C+',2.3],['C',2.0],['C-',1.7],['D+',1.3],['D',1.0],['D-',0.7],['F',0]]},
+    '10':{name:'10-point CGPA', short:'CGPA', semShort:'SGPA', max:10, grades:[['O',10],['A+',9],['A',8],['B+',7],['B',6],['C',5],['P',4],['F',0]]},
+    'pct':{name:'Percentage', short:'Average', max:100, numeric:true}
+  };
+  const ACCENTS=['#d4a853','#b5525c','#7fa37a','#6f8fc0','#9a7bb5','#c07a4a'];   // gold, burgundy, sage, ink blue, plum, copper
+
+  /* ==========================================================================
+     2. STATE & PERSISTENCE
+     ========================================================================== */
+  const INSTANCE=new URLSearchParams(location.search).get('instance')||'default';
+  const KEY='gpa1_'+INSTANCE;
+  const DEF={theme:'dark',accent:'#d4a853',scale:'4',dec:2,zoom:100,view:'overview',
+    target:'',remaining:'',priorGpa:'',priorCr:'',fCur:'',fWeight:'',fTarget:''};
+  let S={...DEF};
+  let D={sems:[]};
+  let storageOK=true;
+
+  const $=id=>document.getElementById(id);
+  const _mq=window.matchMedia('(prefers-color-scheme: dark)');
+  function effectiveTheme(){ return S.theme==='auto'?(_mq.matches?'dark':'light'):S.theme; }
+  function scale(){ return SCALES[S.scale]||SCALES['4']; }
+
+  function save(){ try{ localStorage.setItem(KEY,JSON.stringify({s:S,d:D})); storageOK=true; }catch(e){ storageOK=false; } }
+  function loadLocal(){
+    try{
+      const raw=localStorage.getItem(KEY); if(!raw) return false;
+      const p=JSON.parse(raw);
+      S=cleanSettings(p.s); D=sanitizeData(p.d);
+      return true;
+    }catch(e){ return false; }
+  }
+
+  /* ==========================================================================
+     3. HELPERS
+     ========================================================================== */
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  function uid(){ return Math.random().toString(36).slice(2,10); }
+  function isHex(c){ return /^#[0-9a-f]{6}$/i.test(c||''); }
+  function str(v,max){ return String(v==null?'':v).replace(/\s+/g,' ').trim().slice(0,max); }
+  function num(v){ if(v===''||v==null) return NaN; const n=parseFloat(String(v).replace(',','.')); return isFinite(n)?n:NaN; }
+  function fmt(n,d){ return isFinite(n)?n.toFixed(d==null?S.dec:d):'—'; }
+  function fmtCr(n){ return (Math.round(n*10)/10).toString(); }
+
+  let toastT, toastUndo=null;
+  function toast(msg,undoLabel,undoFn){
+    $('toastMsg').textContent=msg;
+    const b=$('toastBtn');
+    toastUndo=undoFn||null; b.hidden=!undoFn; b.textContent=undoLabel||'';
+    $('toast').classList.add('show');
+    clearTimeout(toastT); toastT=setTimeout(()=>{ $('toast').classList.remove('show'); toastUndo=null; },undoFn?5000:2200);
+  }
+  $('toastBtn').onclick=()=>{ const f=toastUndo; toastUndo=null; $('toast').classList.remove('show'); if(f) f(); };
+
+  async function copyText(text){
+    try{ await navigator.clipboard.writeText(text); return true; }catch(e){}
+    try{
+      const ta=document.createElement('textarea'); ta.value=text; ta.setAttribute('readonly','');
+      ta.style.cssText='position:fixed;top:-1000px;opacity:0'; document.body.appendChild(ta);
+      ta.select(); const ok=document.execCommand('copy'); ta.remove(); return ok;
+    }catch(e){ return false; }
+  }
+  async function copyOrShow(text,okMsg,title){
+    if(await copyText(text)){ toast(okMsg); return; }
+    $('cpTitle').textContent=title||'Copy this'; $('cpText').value=text;
+    openPanel('pCopy');
+    setTimeout(()=>{ $('cpText').focus(); $('cpText').select(); },60);
+  }
+
+  /* ==========================================================================
+     4. VALIDATION (everything entering S / D passes through here)
+     ========================================================================== */
+  function cleanSettings(s){
+    s=s&&typeof s==='object'?s:{};
+    const o={...DEF};
+    if(['auto','dark','light'].includes(s.theme)) o.theme=s.theme;
+    if(isHex(s.accent)) o.accent=s.accent;
+    if(SCALES[s.scale]) o.scale=s.scale;
+    if(s.dec===3||s.dec==='3') o.dec=3;
+    const z=+s.zoom; if(z>=70&&z<=140) o.zoom=z;
+    if(s.view==='final') o.view='final';
+    ['target','remaining','priorGpa','priorCr','fCur','fWeight','fTarget'].forEach(k=>{ const v=num(s[k]); o[k]=isFinite(v)&&v>=0?String(v):''; });
+    return o;
+  }
+  function cleanGrade(g,sc){
+    const s=str(g,6);
+    if(s===''||s.toUpperCase()==='W') return s.toUpperCase();
+    if(sc.numeric){ const n=num(s); return isFinite(n)&&n>=0&&n<=100?String(Math.round(n*100)/100):''; }
+    const hit=sc.grades.find(([l])=>l===s.toUpperCase()); return hit?hit[0]:'';
+  }
+  function sanitizeData(d,scaleKey){
+    const sc=SCALES[scaleKey||S.scale]||SCALES['4'];
+    const out={sems:[]};
+    (d&&Array.isArray(d.sems)?d.sems:[]).slice(0,40).forEach((sm,i)=>{
+      if(!sm||typeof sm!=='object') return;
+      out.sems.push({
+        id:/^[a-z0-9]{4,12}$/.test(sm.id||'')?sm.id:uid(),
+        name:str(sm.name,40)||'Semester '+(i+1),
+        open:sm.open!==false,
+        courses:(Array.isArray(sm.courses)?sm.courses:[]).slice(0,40).map(c=>({
+          id:/^[a-z0-9]{4,12}$/.test(c&&c.id||'')?c.id:uid(),
+          name:str(c&&c.name,80),
+          credits:(()=>{ const n=num(c&&c.credits); return isFinite(n)&&n>=0&&n<=50?String(n):''; })(),
+          grade:cleanGrade(c&&c.grade,sc)
+        }))
+      });
+    });
+    return out;
+  }
+
+  /* ==========================================================================
+     5. MATHS
+     ========================================================================== */
+  /* Points for a grade on the current scale, or null when it doesn't count
+     (in progress, withdrawn, or not a valid grade on this scale). */
+  function gradeValue(g){
+    const sc=scale();
+    if(g===''||g==='W') return null;
+    if(sc.numeric){ const n=num(g); return isFinite(n)?n:null; }
+    const hit=sc.grades.find(([l])=>l===g); return hit?hit[1]:null;
+  }
+  /* Totals for a list of courses: graded credits/points + in-progress credits. */
+  function totals(courses){
+    let cr=0, pts=0, ip=0;
+    courses.forEach(c=>{
+      const k=num(c.credits); if(!isFinite(k)||k<=0) return;
+      const v=gradeValue(c.grade);
+      if(v==null){ if(c.grade==='') ip+=k; return; }
+      cr+=k; pts+=k*v;
+    });
+    return {cr,pts,ip,gpa:cr>0?pts/cr:NaN};
+  }
+  function prior(){
+    const g=num(S.priorGpa), k=num(S.priorCr);
+    return isFinite(g)&&isFinite(k)&&k>0&&g<=scale().max?{cr:k,pts:g*k}:{cr:0,pts:0};
+  }
+  /* Cumulative over the earlier record + every semester. */
+  function overall(){
+    const p=prior();
+    const all=totals(D.sems.flatMap(s=>s.courses));
+    const cr=p.cr+all.cr, pts=p.pts+all.pts;
+    return {cr,pts,ip:all.ip,gpa:cr>0?pts/cr:NaN,priorCr:p.cr};
+  }
+  /* Describe an average in letters: "a B+ average" when it lands on a grade,
+     otherwise "between B+ and A-" (the grades either side of it). */
+  function letterFor(need){
+    const sc=scale(); if(sc.numeric) return '';
+    const vals=[];
+    // A+ and A share 4.0 on the 4.0 scale: name the plain letter.
+    sc.grades.forEach(([l,v])=>{ const x=vals.find(x=>x.v===v); if(!x) vals.push({l,v}); else if(l.length<x.l.length) x.l=l; });
+    const hit=vals.find(x=>Math.abs(x.v-need)<0.005); if(hit) return 'a '+hit.l+' average';
+    const above=vals.filter(x=>x.v>need).sort((a,b)=>a.v-b.v)[0];
+    const below=vals.filter(x=>x.v<need).sort((a,b)=>b.v-a.v)[0];
+    return above&&below?'between '+below.l+' and '+above.l:'';
+  }
+  /* Target planner: average needed over the remaining credits. */
+  function planTarget(){
+    const sc=scale(), o=overall();
+    const t=num(S.target);
+    const remAuto=o.ip;
+    const rem=S.remaining!==''?num(S.remaining):remAuto;
+    if(!isFinite(t)) return {state:'none'};
+    if(t>sc.max) return {state:'over',t};
+    if(!isFinite(rem)||rem<=0) return {state:'norem',t,o};
+    const need=(t*(o.cr+rem)-o.pts)/rem;
+    return {state:need<=0?'safe':need>sc.max+1e-9?'impossible':'ok',t,rem,need,o,
+      best:(o.pts+sc.max*rem)/(o.cr+rem)};
+  }
+
+  /* ==========================================================================
+     6. RENDERING
+     ========================================================================== */
+  const ICON={
+    chev:'<svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>',
+    trash:'<svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>',
+    x:'<svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>'
+  };
+  function semLabel(){ return scale().semShort||scale().short; }
+  function maxLbl(){ return S.scale==='pct'?'per cent':'out of '+scale().max.toFixed(S.scale==='4'?1:0); }
+  const GC=2*Math.PI*52;      // gauge circumference
+
+  function render(){
+    document.querySelectorAll('#viewSeg button').forEach(b=>{ const on=b.dataset.v===S.view; b.classList.toggle('on',on); b.setAttribute('aria-pressed',on); });
+    $('hdScale').textContent=scale().name;
+    const main=$('main'), keep=main.scrollTop;
+    main.innerHTML=S.view==='final'?finalHtml():overviewHtml();
+    main.scrollTop=keep;
+    updateNumbers();
+    renderFooter();
+  }
+  function renderFooter(){
+    $('ft').innerHTML=!storageOK&&D.sems.length?'<button class="warn" data-act="nosave">⚠ Not saved on this device — tap for the portable link</button>':'';
+  }
+
+  function emptyHtml(){
+    return `<div class="empty">
+      <div class="empty-ic">🎓</div>
+      <h3>No grades yet</h3>
+      <p>Add a semester and your courses — your ${esc(scale().short)} updates as you type. Using ${esc(scale().name)} (change it in Settings).</p>
+      <div class="btns"><button class="btn pri" data-act="addsem">Add a semester</button></div>
+      <button class="link" data-act="sample">or load sample grades</button>
+    </div>`;
+  }
+
+  function overviewHtml(){
+    if(!D.sems.length&&!prior().cr) return emptyHtml();
+    const sc=scale(), o=overall();
+    // The bar starts at its real value so redraws (adding a course) don't
+    // replay the fill animation from empty.
+    const w=isFinite(o.gpa)?Math.min(100,o.gpa/sc.max*100):0;
+    // Gauge: a ring of circumference GC, split into 10 by tick gaps; the
+    // target is a gold tick on the ring.
+    let h=`<div class="hero">
+      <div class="gauge">
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="g-trk" cx="60" cy="60" r="52"/>
+          <circle class="g-fill" id="gFill" cx="60" cy="60" r="52" stroke-dasharray="${GC.toFixed(2)}" stroke-dashoffset="${(GC*(1-w/100)).toFixed(2)}"/>
+          <circle class="g-ticks" cx="60" cy="60" r="52"/>
+          <g class="g-tgt" id="gTgt" hidden><line x1="113" y1="60" x2="121" y2="60"/></g>
+        </svg>
+        <div class="g-c"><span class="g-val" id="hVal">—</span><span class="g-max">${esc(maxLbl())}</span></div>
+      </div>
+      <div class="h-info">
+        <div class="h-lbl">Cumulative ${esc(sc.short)}</div>
+        <div class="h-side" id="hSide"></div>
+        <div class="chips" id="hChips"></div>
+      </div>
+    </div>`;
+
+    // Target planner
+    h+=`<div class="card"><div class="card-hd"><span class="card-t">🎯 Target ${esc(sc.short)}</span></div>
+      <div class="row-in">
+        <div><label class="lbl" for="tTarget">Target ${esc(sc.short)}${sc.numeric?' %':''}</label><input class="in" id="tTarget" type="number" inputmode="decimal" step="${sc.numeric?'0.1':'0.01'}" min="0" max="${sc.max}" value="${esc(S.target)}" placeholder="e.g. ${sc.numeric?'80':S.scale==='10'?'8.5':'3.5'}"></div>
+        <div><label class="lbl" for="tRem">Credits still to take</label><input class="in" id="tRem" type="number" inputmode="decimal" step="0.5" min="0" value="${esc(S.remaining)}" placeholder=""></div>
+      </div>
+      <div class="out" id="tOut"></div></div>`;
+
+    // Semesters
+    D.sems.forEach(sm=>{ h+=semHtml(sm); });
+    h+=`<button class="add-sem" data-act="addsem">+ Add a semester</button>`;
+    return h;
+  }
+
+  function gradeInput(c){
+    const sc=scale();
+    if(sc.numeric) return `<input class="in c-gr" type="number" inputmode="decimal" min="0" max="100" step="0.1" value="${esc(c.grade==='W'?'':c.grade)}" placeholder="Marks %" aria-label="Marks out of 100">`;
+    const opts=[['','In progress'],...sc.grades.map(([l,v])=>[l,l+'  ('+v.toFixed(S.scale==='4'?1:0)+')']),['W','W (withdrawn)']];
+    const valid=c.grade===''||c.grade==='W'||sc.grades.some(([l])=>l===c.grade);
+    return `<select class="sel c-gr${c.grade===''?' ip':''}" aria-label="Grade">${opts.map(([v,t])=>`<option value="${esc(v)}"${v===c.grade?' selected':''}>${esc(t)}</option>`).join('')}${valid?'':`<option value="${esc(c.grade)}" selected>${esc(c.grade)} (not on this scale)</option>`}</select>`;
+  }
+  function courseHtml(c){
+    return `<div class="crs" data-cid="${c.id}">
+      <input class="in c-name" value="${esc(c.name)}" placeholder="Course name" maxlength="80" aria-label="Course name">
+      <label class="c-crw"><input class="in c-cr" type="number" inputmode="decimal" min="0" max="50" step="0.5" value="${esc(c.credits)}" placeholder="0" aria-label="Credits"><span aria-hidden="true">cr</span></label>
+      ${gradeInput(c)}
+      <button class="ib c-del" data-act="delc" title="Remove course" aria-label="Remove course">${ICON.x}</button>
+    </div>`;
+  }
+  function semHtml(sm){
+    return `<div class="sem${sm.open?' open':''}" data-sid="${sm.id}">
+      <div class="sem-hd">
+        <button class="ib chev" data-act="toggle" aria-expanded="${sm.open}" title="${sm.open?'Collapse':'Expand'}">${ICON.chev}</button>
+        <input class="sem-name" value="${esc(sm.name)}" maxlength="40" aria-label="Semester name">
+        <span class="sem-gpa" data-sg></span><span class="sem-cr" data-sc></span>
+        <button class="ib" data-act="delsem" title="Delete semester" aria-label="Delete semester">${ICON.trash}</button>
+      </div>
+      <div class="sem-body">
+        <div class="crs-hd"><span>Course</span><span>Credits</span><span>Grade</span><span></span></div>
+        ${sm.courses.map(courseHtml).join('')}
+        <button class="addc" data-act="addc">+ Add course</button>
+      </div>
+    </div>`;
+  }
+
+  /* Update every number in place — called on each keystroke so inputs keep
+     focus and the cursor never jumps. */
+  function updateNumbers(){
+    if(S.view==='final'){ updateFinal(); return; }
+    const sc=scale(), o=overall();
+    if(!$('hVal')) return;
+    $('hVal').textContent=fmt(o.gpa);
+    const frac=isFinite(o.gpa)?Math.min(1,o.gpa/sc.max):0;
+    $('gFill').setAttribute('stroke-dashoffset',(GC*(1-frac)).toFixed(2));
+    const t=num(S.target);
+    const tg=$('gTgt'); tg.hidden=!(isFinite(t)&&t<=sc.max); if(!tg.hidden) tg.setAttribute('transform',`rotate(${(t/sc.max*360).toFixed(2)} 60 60)`);
+
+    // Latest graded semester and the change it made.
+    let side='';
+    const graded=D.sems.map(s=>({s,t:totals(s.courses)})).filter(x=>x.t.cr>0);
+    if(graded.length){
+      const last=graded[graded.length-1];
+      side=`Latest ${esc(semLabel())}: <b>${fmt(last.t.gpa)}</b>`;
+      const before=(()=>{ const p=prior(); const rest=totals(D.sems.filter(s=>s!==last.s).flatMap(s=>s.courses)); const cr=p.cr+rest.cr; return cr>0?(p.pts+rest.pts)/cr:NaN; })();
+      if(isFinite(before)&&isFinite(o.gpa)){
+        const dlt=o.gpa-before;
+        if(Math.abs(dlt)>=Math.pow(10,-S.dec)/2) side+=`<br><span class="${dlt>0?'up':'down'}">${dlt>0?'▲':'▼'} ${fmt(Math.abs(dlt))}</span> overall`;
+      }
+    }
+    $('hSide').innerHTML=side;
+    const chips=[];
+    chips.push(`<span class="chip">${fmtCr(o.cr)} credits graded</span>`);
+    if(o.ip>0) chips.push(`<span class="chip">${fmtCr(o.ip)} in progress</span>`);
+    if(o.priorCr>0) chips.push(`<span class="chip">incl. earlier ${fmtCr(o.priorCr)} cr</span>`);
+    if(isFinite(t)&&isFinite(o.gpa)&&t<=sc.max) chips.push(`<span class="chip gold">${o.gpa>=t-1e-9?'✓ target reached':'Target '+fmt(t)}</span>`);
+    $('hChips').innerHTML=chips.join('');
+
+    // Semester headers
+    document.querySelectorAll('.sem').forEach(el=>{
+      const sm=D.sems.find(s=>s.id===el.dataset.sid); if(!sm) return;
+      const tt=totals(sm.courses);
+      const g=el.querySelector('[data-sg]');
+      if(tt.cr>0){ g.textContent=fmt(tt.gpa); g.className='sem-gpa'; g.title=semLabel(); }
+      else { g.textContent=tt.ip>0?'in progress':'—'; g.className='sem-gpa none'; g.title=''; }
+      el.querySelector('[data-sc]').textContent=fmtCr(tt.cr+tt.ip)+' cr';
+      // Flag grades that aren't on the current scale.
+      el.querySelectorAll('.crs').forEach(row=>{
+        const c=sm.courses.find(x=>x.id===row.dataset.cid); if(!c) return;
+        row.classList.toggle('bad',c.grade!==''&&c.grade!=='W'&&gradeValue(c.grade)==null);
+        const gs=row.querySelector('select.c-gr'); if(gs) gs.classList.toggle('ip',c.grade==='');
+      });
+    });
+
+    // Target planner
+    const rem=$('tRem'); if(rem) rem.placeholder=o.ip>0?fmtCr(o.ip)+' (in progress)':'e.g. 30';
+    const out=$('tOut'); if(!out) return;
+    const p=planTarget();
+    const unit=sc.numeric?'%':'';
+    let cls='', html='';
+    if(p.state==='none') html=`Set a target to see the average you need in your remaining credits.`;
+    else if(p.state==='over'){ cls='bad'; html=`The highest possible ${esc(sc.short)} is ${sc.max}.`; }
+    else if(p.state==='norem'){
+      html=isFinite(p.o.gpa)&&p.o.gpa>=p.t?`You're at <b>${fmt(p.o.gpa)}</b> — already at or above your target. 🎉`:`Enter how many credits you still have to take (or add courses without a grade yet) to plan for <b>${fmt(p.t)}</b>.`;
+      if(isFinite(p.o.gpa)&&p.o.gpa>=p.t) cls='ok';
+    }
+    else if(p.state==='safe'){ cls='ok'; html=`<span class="big">Already safe</span>You'll stay at or above <b>${fmt(p.t)}${unit}</b> whatever you score in the next ${fmtCr(p.rem)} credits.`; }
+    else if(p.state==='impossible'){ cls='bad'; html=`<span class="big">Not reachable</span>Even a perfect ${sc.max}${unit} in the next ${fmtCr(p.rem)} credits gets you to <b>${fmt(p.best)}</b>. Try a lower target or more credits.`; }
+    else {
+      const L=letterFor(p.need), above=isFinite(p.o.gpa)&&p.o.gpa>=p.t;
+      html=`<span class="big">${fmt(p.need)}${unit}${L?` <small style="font-family:Inter;font-size:13px;color:var(--sub)">${esc(L)}</small>`:''}</span>average needed across your next <b>${fmtCr(p.rem)}</b> credits to ${above?'stay at or above':'reach'} <b>${fmt(p.t)}${unit}</b>.`;
+    }
+    out.className='out'+(cls?' '+cls:''); out.innerHTML=html;
+  }
+
+  /* ==========================================================================
+     7. FINAL-EXAM TAB
+     ========================================================================== */
+  function finalHtml(){
+    return `<div class="card"><div class="card-hd"><span class="card-t">📝 What do I need on the final?</span></div>
+      <div class="hint" style="margin-top:6px">For one course: your grade so far, how much the final counts, and the course grade you want.</div>
+      <div class="row-in">
+        <div><label class="lbl" for="fCur">Grade so far %</label><input class="in" id="fCur" type="number" inputmode="decimal" min="0" max="100" step="0.1" value="${esc(S.fCur)}" placeholder="e.g. 82"></div>
+        <div><label class="lbl" for="fWeight">Final is worth %</label><input class="in" id="fWeight" type="number" inputmode="decimal" min="1" max="100" step="1" value="${esc(S.fWeight)}" placeholder="e.g. 30"></div>
+      </div>
+      <div class="row-in">
+        <div><label class="lbl" for="fTarget">Course grade I want %</label><input class="in" id="fTarget" type="number" inputmode="decimal" min="0" max="100" step="0.1" value="${esc(S.fTarget)}" placeholder="e.g. 90"></div>
+        <div></div>
+      </div>
+      <div class="out" id="fOut"></div>
+      <table class="tbl" id="fTbl"></table></div>`;
+  }
+  function needOnFinal(cur,w,t){ return (t-cur*(1-w))/w; }
+  function updateFinal(){
+    const out=$('fOut'); if(!out) return;
+    const cur=num(S.fCur), w=num(S.fWeight)/100, t=num(S.fTarget);
+    const ready=isFinite(cur)&&isFinite(w)&&w>0&&w<=1;
+    let cls='', html='';
+    if(!ready) html='Fill in your grade so far and how much the final is worth.';
+    else if(!isFinite(t)) html='Now enter the course grade you want.';
+    else{
+      const n=needOnFinal(cur,w,t);
+      if(n<=0){ cls='ok'; html=`<span class="big">Already there</span>You'll get at least <b>${fmt(t,1)}%</b> even with 0 on the final.`; }
+      else if(n>100){ cls='bad'; html=`<span class="big">${fmt(n,1)}%</span>More than 100% — not reachable. A perfect final gives <b>${fmt(cur*(1-w)+100*w,1)}%</b>.`; }
+      else html=`<span class="big">${fmt(n,1)}%</span>needed on the final to finish with <b>${fmt(t,1)}%</b>.`;
+    }
+    out.className='out'+(cls?' '+cls:''); out.innerHTML=html;
+    $('fTbl').innerHTML=ready?[90,80,70,60].map(g=>{ const n=needOnFinal(cur,w,g); return `<tr class="${n>100?'no':n<=0?'yes':''}"><td>To finish with ${g}%</td><td>${n<=0?'already there':n>100?'not reachable':fmt(n,1)+'% on the final'}</td></tr>`; }).join(''):'';
+  }
+
+  /* ==========================================================================
+     8. INLINE EDITING (delegated)
+     ========================================================================== */
+  function findCourse(el){
+    const sm=D.sems.find(s=>s.id===el.closest('.sem')?.dataset.sid);
+    const c=sm&&sm.courses.find(x=>x.id===el.closest('.crs')?.dataset.cid);
+    return {sm,c};
+  }
+  let saveT;
+  function saveSoon(){ clearTimeout(saveT); saveT=setTimeout(save,250); }
+
+  $('main').addEventListener('input',e=>{
+    const t=e.target;
+    if(t.classList.contains('sem-name')){ const sm=D.sems.find(s=>s.id===t.closest('.sem').dataset.sid); if(sm) sm.name=str(t.value,40); saveSoon(); return; }
+    if(t.classList.contains('c-name')){ const {c}=findCourse(t); if(c) c.name=str(t.value,80); saveSoon(); return; }
+    // A value that was typed but can't be used (e.g. 150 marks) gets a red
+    // outline, so it's clear it isn't being counted.
+    const flag=(ok)=>t.classList.toggle('invalid',t.value!==''&&!ok);
+    if(t.classList.contains('c-cr')){ const {c}=findCourse(t); if(c){ const n=num(t.value); c.credits=isFinite(n)&&n>=0&&n<=50?String(n):''; flag(c.credits!==''); } saveSoon(); updateNumbers(); return; }
+    if(t.classList.contains('c-gr')){ const {c}=findCourse(t); if(c){ c.grade=cleanGrade(t.value,scale()); if(t.tagName==='INPUT') flag(c.grade!==''); } saveSoon(); updateNumbers(); return; }
+    const map={tTarget:'target',tRem:'remaining',fCur:'fCur',fWeight:'fWeight',fTarget:'fTarget'};
+    const lim={fCur:100,fWeight:100,fTarget:100,tRem:500};
+    if(map[t.id]){ const n=num(t.value); const ok=isFinite(n)&&n>=0&&(!lim[t.id]||n<=lim[t.id])&&!(t.id==='fWeight'&&n===0); S[map[t.id]]=ok?String(n):''; flag(ok); saveSoon(); updateNumbers(); }
+  });
+  // Tidy the semester name when leaving the field (empty → default name).
+  $('main').addEventListener('focusout',e=>{
+    const t=e.target;
+    if(t.classList.contains('sem-name')){ const sm=D.sems.find(s=>s.id===t.closest('.sem').dataset.sid); if(sm&&!sm.name){ sm.name='Semester '+(D.sems.indexOf(sm)+1); t.value=sm.name; save(); } }
+  });
+  // Enter in a course row jumps to the next field / adds a new course.
+  $('main').addEventListener('keydown',e=>{
+    if(e.key!=='Enter') return;
+    const t=e.target, row=t.closest('.crs');
+    if(t.classList.contains('sem-name')){ e.preventDefault(); t.blur(); return; }
+    if(!row) return;
+    e.preventDefault();
+    const f=[...row.querySelectorAll('.in,.sel')], i=f.indexOf(t);
+    if(i>=0&&i<f.length-1) f[i+1].focus();
+    else addCourse(row.closest('.sem').dataset.sid);
+  });
+
+  $('main').addEventListener('click',e=>{
+    const a=e.target.closest('[data-act]'); if(!a) return;
+    const act=a.dataset.act;
+    if(act==='addsem') return addSemester();
+    if(act==='sample') return loadSample();
+    const semEl=a.closest('.sem'), sm=semEl&&D.sems.find(s=>s.id===semEl.dataset.sid);
+    if(act==='toggle'&&sm){ sm.open=!sm.open; save(); semEl.classList.toggle('open',sm.open); a.setAttribute('aria-expanded',sm.open); a.title=sm.open?'Collapse':'Expand'; return; }
+    if(act==='addc'&&sm) return addCourse(sm.id);
+    if(act==='delc'&&sm){
+      const i=sm.courses.findIndex(c=>c.id===a.closest('.crs').dataset.cid); if(i<0) return;
+      const [c]=sm.courses.splice(i,1); save(); render();
+      toast('Removed '+(c.name||'course'),'Undo',()=>{ sm.courses.splice(i,0,c); save(); render(); });
+      return;
+    }
+    if(act==='delsem'&&sm){
+      const i=D.sems.indexOf(sm); D.sems.splice(i,1); save(); render();
+      toast('Deleted '+sm.name,'Undo',()=>{ D.sems.splice(i,0,sm); save(); render(); });
+    }
+  });
+  $('ft').addEventListener('click',e=>{ if(e.target.closest('[data-act="nosave"]')) openPanel('pSet'); });
+
+  function addSemester(){
+    const n=D.sems.length+1;
+    const sm={id:uid(),name:'Semester '+n,open:true,courses:[]};
+    D.sems.forEach(s=>s.open=false);       // keep the list short: focus on the new one
+    D.sems.push(sm); S.view='overview';
+    addCourse(sm.id,true);
+  }
+  function addCourse(sid,silent){
+    const sm=D.sems.find(s=>s.id===sid); if(!sm) return;
+    if(sm.courses.length>=40){ toast('A semester can hold up to 40 courses'); return; }
+    const last=sm.courses[sm.courses.length-1];
+    const c={id:uid(),name:'',credits:last?last.credits:'3',grade:''};
+    sm.courses.push(c); sm.open=true; save(); render();
+    const row=document.querySelector(`.crs[data-cid="${c.id}"] .c-name`);
+    if(row){ row.focus({preventScroll:true}); row.scrollIntoView({block:'nearest'}); }
+  }
+
+  /* ==========================================================================
+     9. PANELS (focus moves in on open and back on close)
+     ========================================================================== */
+  let returnFocus=null;
+  function openPanel(id){
+    if(!document.querySelector('.panel.open')) returnFocus=document.activeElement;
+    document.querySelectorAll('.panel.open').forEach(p=>p.classList.remove('open'));
+    if(id==='pSet') prepSettings();
+    const p=$(id); p.classList.add('open');
+    setTimeout(()=>{ if(p.contains(document.activeElement)) return; const f=p.querySelector('.p-body button, .p-body input, .p-body textarea'); (f||p.querySelector('.p-hd button')).focus({preventScroll:true}); },30);
+  }
+  function closePanels(){
+    const was=!!document.querySelector('.panel.open');
+    document.querySelectorAll('.panel.open').forEach(p=>p.classList.remove('open'));
+    if(was&&returnFocus&&document.contains(returnFocus)&&returnFocus.offsetParent!==null) returnFocus.focus({preventScroll:true});
+    returnFocus=null;
+  }
+  document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',closePanels));
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePanels(); });
+  $('gearBtn').onclick=()=>openPanel('pSet');
+  $('addSemBtn').onclick=addSemester;
+  $('viewSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; S.view=b.dataset.v; save(); render(); });
+
+  function tg(id,onPick){
+    const el=$(id);
+    el.addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; onPick(b.dataset.v); });
+    return v=>el.querySelectorAll('button').forEach(b=>{ const on=b.dataset.v===String(v); b.classList.toggle('on',on); b.setAttribute('aria-pressed',on); });
+  }
+
+  /* ==========================================================================
+     10. SETTINGS
+     ========================================================================== */
+  function applyTheme(){
+    document.documentElement.setAttribute('data-theme',effectiveTheme());
+    document.documentElement.style.setProperty('--acc',isHex(S.accent)?S.accent:DEF.accent);
+    $('app').style.zoom=S.zoom/100;
+  }
+  const setTheme=tg('sTheme',v=>{ S.theme=v; setTheme(v); save(); applyTheme(); });
+  const setDec=tg('sDec',v=>{ S.dec=+v; setDec(v); save(); render(); });
+
+  /* Switching scale: grades don't translate between scales, so if any course
+     has a grade we ask once more before clearing them (names + credits stay). */
+  let scaleArmed=null;
+  function anyGrades(){ return D.sems.some(s=>s.courses.some(c=>c.grade!==''&&c.grade!=='W')); }
+  const setScale=tg('sScale',v=>{
+    if(v===S.scale){ scaleArmed=null; $('sScaleWarn').textContent=''; return; }
+    if(anyGrades()&&scaleArmed!==v){
+      scaleArmed=v;
+      $('sScaleWarn').textContent=`Grades don't carry over between scales. Tap “${SCALES[v].name}” again to switch — course names and credits stay, grades are cleared.`;
+      return;
+    }
+    scaleArmed=null; $('sScaleWarn').textContent='';
+    S.scale=v;
+    D.sems.forEach(s=>s.courses.forEach(c=>{ if(c.grade!=='W') c.grade=''; }));
+    // Target / earlier GPA are on the old scale too.
+    S.target=''; S.priorGpa=''; S.remaining='';
+    setScale(v); drawScaleTbl(); save(); prepSettings(); render();
+    toast('Switched to '+SCALES[v].name);
+  });
+  function drawScaleTbl(){
+    const sc=scale();
+    $('sScaleTbl').innerHTML=sc.numeric?'<span style="grid-column:1/-1;text-align:left">Each course takes its mark out of 100; the average is weighted by credits.</span>'
+      :sc.grades.map(([l,v])=>`<span><b>${esc(l)}</b> ${v.toFixed(S.scale==='4'?1:0)}</span>`).join('');
+    $('sPriorLbl').textContent='Earlier '+sc.short+(sc.numeric?' %':'');
+    $('sPriorGpa').placeholder=sc.numeric?'e.g. 78':S.scale==='10'?'e.g. 8.2':'e.g. 3.40';
+  }
+  function drawAccents(){
+    const custom=!ACCENTS.includes(S.accent);
+    $('sAccent').innerHTML=ACCENTS.map(c=>`<button type="button" class="sw${c===S.accent?' on':''}" style="--c:${c}" data-c="${c}" aria-label="Accent ${c}" aria-pressed="${c===S.accent}"></button>`).join('')
+      +`<label class="sw-cu${custom?' on':''}" title="Custom colour"><input type="color" id="sAccIn" value="${isHex(S.accent)?S.accent:DEF.accent}"></label>`;
+    $('sAccIn').addEventListener('input',e=>{ S.accent=e.target.value; save(); applyTheme(); drawAccents(); });
+  }
+  $('sAccent').addEventListener('click',e=>{ const s=e.target.closest('.sw'); if(s){ S.accent=s.dataset.c; save(); applyTheme(); drawAccents(); } });
+  $('sZoom').addEventListener('input',e=>{ S.zoom=+e.target.value; $('sZoomL').textContent=S.zoom+'%'; applyTheme(); });
+  $('sZoom').addEventListener('change',save);
+
+  function priorChanged(){
+    const g=num($('sPriorGpa').value), k=num($('sPriorCr').value), sc=scale();
+    $('sPriorErr').textContent=isFinite(g)&&g>sc.max?`The highest possible ${sc.short} is ${sc.max}.`:'';
+    S.priorGpa=isFinite(g)&&g>=0&&g<=sc.max?String(g):'';
+    S.priorCr=isFinite(k)&&k>=0?String(k):'';
+    save(); render();
+  }
+  $('sPriorGpa').addEventListener('input',priorChanged);
+  $('sPriorCr').addEventListener('input',priorChanged);
+
+  function prepSettings(){
+    setTheme(S.theme); setDec(S.dec); setScale(S.scale);
+    scaleArmed=null; $('sScaleWarn').textContent='';
+    drawScaleTbl(); drawAccents();
+    $('sZoom').value=S.zoom; $('sZoomL').textContent=S.zoom+'%';
+    $('sPriorGpa').value=S.priorGpa; $('sPriorCr').value=S.priorCr; $('sPriorErr').textContent='';
+    $('sRestoreWrap').hidden=true; $('sRestoreErr').textContent='';
+    disarm();
+  }
+  _mq.addEventListener('change',()=>{ if(S.theme==='auto') applyTheme(); });
+
+  // Backup / restore
+  function backupText(){ return JSON.stringify({app:'gpa',v:1,s:S,d:D}); }
+  $('sBackup').onclick=()=>copyOrShow(backupText(),'Backup copied — paste it somewhere safe','Your backup');
+  $('sRestoreBtn').onclick=()=>{ $('sRestoreWrap').hidden=!$('sRestoreWrap').hidden; };
+  $('sRestoreGo').onclick=()=>{
+    let j;
+    try{ const t=$('sRestore').value; j=JSON.parse(t.slice(t.indexOf('{'),t.lastIndexOf('}')+1)); }catch(e){ $('sRestoreErr').textContent='That isn\'t a backup from this widget.'; return; }
+    const s=cleanSettings(j.s), d=sanitizeData(j.d,s.scale);
+    if(!d.sems.length&&!s.priorCr){ $('sRestoreErr').textContent='No grades found in that backup.'; return; }
+    S=s; D=d; save(); applyTheme(); prepSettings(); render(); toast('Backup restored');
+  };
+
+  // Two-step destructive actions
+  let armed=null;
+  function disarm(){ armed=null; $('sClear').textContent='Clear all grades'; $('sReset').textContent='Reset settings'; }
+  $('sClear').onclick=()=>{
+    if(armed!=='clear'){ disarm(); armed='clear'; $('sClear').textContent='Tap again — this deletes every semester'; return; }
+    const old=D, oldP=[S.priorGpa,S.priorCr];
+    D={sems:[]}; S.priorGpa=''; S.priorCr=''; save(); disarm(); closePanels(); render();
+    toast('All grades cleared','Undo',()=>{ D=old; [S.priorGpa,S.priorCr]=oldP; save(); render(); });
+  };
+  $('sReset').onclick=()=>{
+    if(armed!=='reset'){ disarm(); armed='reset'; $('sReset').textContent='Tap again to reset settings'; return; }
+    // Keep the scale and the user's numbers; reset only the look.
+    S={...S,theme:DEF.theme,accent:DEF.accent,dec:DEF.dec,zoom:DEF.zoom};
+    save(); disarm(); applyTheme(); prepSettings(); render(); toast('Settings reset');
+  };
+  $('sSample').onclick=()=>{
+    if(D.sems.length&&armed!=='sample'){ disarm(); armed='sample'; $('sSample').textContent='Tap again — this replaces your grades'; return; }
+    $('sSample').textContent='Load sample grades'; disarm(); closePanels(); loadSample();
+  };
+
+  /* ==========================================================================
+     11. PORTABLE LINK (#d=… carries everything, compressed when possible)
+     ========================================================================== */
+  function b64u(bytes){ let s=''; bytes.forEach(b=>s+=String.fromCharCode(b)); return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+  function unb64u(s){ s=s.replace(/-/g,'+').replace(/_/g,'/'); while(s.length%4) s+='='; return Uint8Array.from(atob(s),c=>c.charCodeAt(0)); }
+  async function pipe(bytes,stream){ return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer()); }
+  async function encodeData(obj){
+    const raw=new TextEncoder().encode(JSON.stringify(obj));
+    if(typeof CompressionStream!=='undefined'){ try{ return 'z'+b64u(await pipe(raw,new CompressionStream('deflate-raw'))); }catch(e){} }
+    return 'j'+b64u(raw);
+  }
+  async function decodeData(s){
+    const bytes=unb64u(s.slice(1));
+    const raw=s[0]==='z'?await pipe(bytes,new DecompressionStream('deflate-raw')):bytes;
+    return JSON.parse(new TextDecoder().decode(raw));
+  }
+  // Ids are dropped from the link (regenerated on load) to keep it short.
+  function packData(){ return {sems:D.sems.map(s=>({name:s.name,open:s.open,courses:s.courses.map(({id,...c})=>c)}))}; }
+  $('sPortable').onclick=async()=>{
+    const code=await encodeData({d:packData(),s:S});
+    await copyOrShow(location.origin+location.pathname+location.search+'#d='+code,'Portable link copied — use it as your embed link','Your portable link');
+  };
+  async function loadFromHash(hadLocal){
+    const m=/[#&]d=([A-Za-z0-9_-]+)/.exec(location.hash); if(!m) return;
+    let applied=''; try{ applied=localStorage.getItem(KEY+'_hash')||''; }catch(e){}
+    if(hadLocal&&applied===m[1]) return;
+    try{
+      const j=await decodeData(m[1]);
+      S=cleanSettings(j.s); D=sanitizeData(j.d,S.scale);
+      try{ localStorage.setItem(KEY+'_hash',m[1]); }catch(e){}
+      save(); applyTheme(); render();
+    }catch(e){ toast('Couldn\'t read the grades in this link'); }
+  }
+
+  /* ==========================================================================
+     12. SAMPLE DATA (one per scale; all names made up)
+     ========================================================================== */
+  const SAMPLES={
+    '4':[
+      ['Fall 2025',[['Human Anatomy & Physiology',4,'A-'],['General Chemistry',4,'B+'],['Data Structures & Algorithms',3,'A'],['Studio Art I',3,'A'],['Academic Writing Seminar',2,'A-']]],
+      ['Spring 2026',[['Organic Chemistry',4,'B'],['Database Systems',3,'A-'],['Statistics',3,'B+'],['Public Speaking',2,'A']]],
+      ['Fall 2026',[['Operating Systems',4,''],['Linear Algebra',3,''],['Microbiology',4,''],['Ethics',2,'']]]
+    ],
+    '10':[
+      ['Semester 1',[['Engineering Mathematics I',4,'A'],['Engineering Physics',4,'B+'],['Programming in C',3,'O'],['Basic Electrical Engineering',3,'A'],['Communication Skills',2,'A+']]],
+      ['Semester 2',[['Engineering Mathematics II',4,'B+'],['Engineering Chemistry',4,'A'],['Data Structures',4,'A+'],['Engineering Graphics',3,'B'],['Environmental Studies',2,'A']]],
+      ['Semester 3',[['Discrete Mathematics',4,''],['Object Oriented Programming (Java)',4,''],['Database Management Systems',4,''],['Digital Logic & Computer Organization',3,''],['Data Structures Lab',2,'']]]
+    ],
+    'pct':[
+      ['Term 1',[['Mathematics',4,'86'],['Physics',4,'78'],['Programming',3,'91'],['English',2,'74']]],
+      ['Term 2',[['Mathematics II',4,'81'],['Chemistry',4,'72'],['Data Structures',3,'88'],['Economics',2,'']]]
+    ]
+  };
+  function loadSample(){
+    const smp=SAMPLES[S.scale]||SAMPLES['4'];
+    D=sanitizeData({sems:smp.map(([name,cs],i)=>({name,open:i===smp.length-1,courses:cs.map(([n,k,g])=>({name:n,credits:k,grade:g}))}))});
+    S.target=S.scale==='pct'?'82':S.scale==='10'?'8.5':'3.5'; S.remaining=''; S.view='overview';
+    save(); render(); toast('Sample grades loaded');
+  }
+
+  /* ==========================================================================
+     13. INIT
+     ========================================================================== */
+  // Same widget open twice: take the other copy's saves instead of overwriting them.
+  window.addEventListener('storage',e=>{
+    if(e.key!==KEY||e.newValue==null) return;
+    try{
+      const p=JSON.parse(e.newValue);
+      const a=document.activeElement;
+      // Don't redraw under someone typing in this copy; their next save wins.
+      if(a&&a.closest&&a.closest('#main')&&/INPUT|SELECT/.test(a.tagName)) { S=cleanSettings(p.s); D=sanitizeData(p.d); return; }
+      S=cleanSettings(p.s); D=sanitizeData(p.d); applyTheme(); render();
+      if($('pSet').classList.contains('open')) prepSettings();
+    }catch(err){}
+  });
+
+  const hadLocal=loadLocal();
+  try{ localStorage.setItem(KEY+'_probe','1'); localStorage.removeItem(KEY+'_probe'); }catch(e){ storageOK=false; }
+  applyTheme();
+  render();
+  loadFromHash(hadLocal);
+  </script>
+</body>
+</html>
