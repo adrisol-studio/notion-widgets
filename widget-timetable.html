@@ -130,8 +130,8 @@
     .it-title { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; min-width: 0; }
     .it-title .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .stk { font-size: 15px; line-height: 1; flex-shrink: 0; }
-    .chips { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 4px; }
-    .chip { font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 5px; background: var(--card2); color: var(--sub); white-space: nowrap; }
+    .chips { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 4px; min-width: 0; }
+    .chip { font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 5px; background: var(--card2); color: var(--sub); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
     .chip.c { background: color-mix(in srgb, var(--c) 16%, transparent); color: var(--c); }
     .chip.cx { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); }
     .note { font-size: 11.5px; color: var(--sub); margin-top: 5px; font-style: italic; }
@@ -196,10 +196,15 @@
     .ft { flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 0 14px 10px; font-size: 11px; color: var(--faint); min-height: 22px; flex-wrap: wrap; }
     .ft .pill { padding: 3px 9px; border-radius: 20px; background: var(--card2); font-weight: 600; color: var(--sub); white-space: nowrap; }
     .ft .pill.gold { color: var(--gold); background: color-mix(in srgb, var(--gold) 12%, transparent); }
+    .ft .pill.warn { color: var(--red); background: color-mix(in srgb, var(--red) 14%, transparent); border: none; cursor: pointer; font: inherit; font-weight: 600; white-space: normal; text-align: left; }
 
     /* ===== Slide-over panels ===== */
-    .panel { position: absolute; inset: 0; z-index: 50; background: var(--bg); display: flex; flex-direction: column; opacity: 0; pointer-events: none; transform: translateY(10px); transition: opacity .22s, transform .22s; }
-    .panel.open { opacity: 1; pointer-events: auto; transform: none; }
+    /* visibility:hidden takes a closed panel out of the Tab order; it flips only
+       after the fade-out so the closing animation still shows. */
+    .panel { position: absolute; inset: 0; z-index: 50; background: var(--bg); display: flex; flex-direction: column; opacity: 0; pointer-events: none; transform: translateY(10px); visibility: hidden; transition: opacity .22s, transform .22s, visibility 0s linear .22s; }
+    .panel.open { opacity: 1; pointer-events: auto; transform: none; visibility: visible; transition-delay: 0s; }
+    /* Visible keyboard focus everywhere (mouse clicks don't show it). */
+    button:focus-visible, a:focus-visible, .it:focus-visible, .bl:focus-visible, .sw-cu:focus-within { outline: 2px solid var(--acc); outline-offset: 2px; }
     .p-hd { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
     .p-hd span { font-family: 'Chakra Petch', sans-serif; font-weight: 700; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; flex: 1; }
     .p-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; scrollbar-width: thin; scrollbar-color: var(--card3) transparent; }
@@ -220,7 +225,7 @@
     .tg button { flex: 1; border: none; background: none; padding: 6px 4px; font-size: 11.5px; font-weight: 600; border-radius: 7px; cursor: pointer; color: var(--sub); white-space: nowrap; }
     .tg button.on { background: var(--card3); color: var(--text); }
     .sw-row { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
-    .sw { width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; background: var(--c); transition: transform .12s; }
+    .sw { width: 24px; height: 24px; padding: 0; border-radius: 50%; border: 2px solid transparent; cursor: pointer; background: var(--c); transition: transform .12s; }
     .sw:hover { transform: scale(1.12); }
     .sw.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg) inset; }
     .sw-cu { position: relative; width: 24px; height: 24px; border-radius: 50%; overflow: hidden; background: conic-gradient(#f87171, #fbbf24, #34d399, #22d3ee, #818cf8, #e879f9, #f87171); cursor: pointer; border: 2px solid transparent; }
@@ -350,7 +355,7 @@
     <footer class="ft" id="ft"></footer>
 
     <!-- ===== Class editor ===== -->
-    <div class="panel" id="pEdit">
+    <div class="panel" id="pEdit" role="dialog" aria-label="Edit class">
       <div class="p-hd"><span id="edTitle">Edit class</span><button class="ib" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
       <div class="p-body">
         <div><label class="lbl" for="fTitle">Course name</label><input class="in" id="fTitle" maxlength="80" placeholder="e.g. General Chemistry"></div>
@@ -364,8 +369,8 @@
           <div><label class="lbl" for="fEnd">End</label><input class="in" id="fEnd" type="time"></div>
         </div>
         <div class="f-row">
-          <div><label class="lbl" for="fRoom">Room</label><input class="in" id="fRoom" maxlength="40" placeholder="B-204"></div>
-          <div><label class="lbl" for="fTeacher">Teacher</label><input class="in" id="fTeacher" maxlength="50" placeholder="Dr. Kim"></div>
+          <div><label class="lbl" for="fRoom">Room</label><input class="in" id="fRoom" maxlength="80" placeholder="B-204"></div>
+          <div><label class="lbl" for="fTeacher">Teacher</label><input class="in" id="fTeacher" maxlength="80" placeholder="Dr. Kim"></div>
         </div>
         <div id="fWeekWrap"><label class="lbl">Repeats</label><div class="tg" id="fWeek"><button data-v="">Every week</button><button data-v="A">Week A</button><button data-v="B">Week B</button></div></div>
         <div><label class="lbl">Colour</label><div class="sw-row" id="fColors"></div></div>
@@ -382,7 +387,7 @@
     </div>
 
     <!-- ===== AI import ===== -->
-    <div class="panel" id="pImport">
+    <div class="panel" id="pImport" role="dialog" aria-label="Import with AI">
       <div class="p-hd"><span>Import with AI</span><button class="ib" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
       <div class="p-body">
         <div class="box">
@@ -409,7 +414,7 @@
     </div>
 
     <!-- ===== Holidays ===== -->
-    <div class="panel" id="pHol">
+    <div class="panel" id="pHol" role="dialog" aria-label="Holidays and exams">
       <div class="p-hd"><span>Holidays & exams</span><button class="ib" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
       <div class="p-body">
         <div class="box">
@@ -427,7 +432,7 @@
     </div>
 
     <!-- ===== Settings ===== -->
-    <div class="panel" id="pSet">
+    <div class="panel" id="pSet" role="dialog" aria-label="Settings">
       <div class="p-hd"><span>Settings</span><button class="ib" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
       <div class="p-body">
         <div><label class="lbl">Theme</label><div class="tg" id="sTheme"><button data-v="auto">Auto</button><button data-v="dark">Dark</button><button data-v="light">Light</button></div></div>
@@ -473,7 +478,7 @@
     </div>
 
     <!-- ===== Manual-copy fallback (when the embed blocks the clipboard) ===== -->
-    <div class="panel" id="pCopy" style="z-index:60">
+    <div class="panel" id="pCopy" style="z-index:60" role="dialog" aria-label="Copy">
       <div class="p-hd"><span id="cpTitle">Copy this</span><button class="ib" id="cpClose" title="Close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
       <div class="p-body">
         <div class="hint">This page doesn't allow automatic copying. The text below is selected — press <b>Ctrl + C</b> (or <b>⌘ + C</b>), or long-press it on a phone and choose <b>Copy</b>.</div>
@@ -510,7 +515,11 @@
 
   /* Persistence. Storage can throw inside sandboxed/3rd-party iframes, so every
      access is guarded; the widget keeps working in memory either way. */
-  function save(){ try{ localStorage.setItem(KEY,JSON.stringify({s:S,d:D})); }catch(e){} }
+  /* storageOK is false when this browser won't let the embed save (private
+     mode, blocked third-party storage). The widget still works, but changes
+     vanish on reload, so the footer warns and points to the portable link. */
+  let storageOK=true;
+  function save(){ try{ localStorage.setItem(KEY,JSON.stringify({s:S,d:D})); storageOK=true; }catch(e){ storageOK=false; } }
   function loadLocal(){
     try{
       const raw=localStorage.getItem(KEY); if(!raw) return false;
@@ -605,7 +614,7 @@
     return {c:{
       id:typeof o.id==='string'&&/^[a-z0-9]{4,12}$/.test(o.id)?o.id:uid(),
       title, code:str(o.code,24), day, start, end,
-      room:str(o.room,40), teacher:str(o.teacher,50), type:normType(o.type),
+      room:str(o.room,80), teacher:str(o.teacher,80), type:normType(o.type),
       color:isHex(o.color)?o.color:'', sticker:str(o.sticker,8), note:str(o.note,120), week
     }};
   }
@@ -645,11 +654,15 @@
      ========================================================================== */
   function holidayOn(ds,kind){ return D.holidays.find(h=>ds>=h.start&&ds<=h.end&&(!kind||h.kind===kind))||null; }
   function mondayOf(d){ return addDays(d,-dayIdx(d)); }
-  /* Week A/B label for a date: parity of whole weeks since the anchor Monday. */
+  /* First day of d's week, following the "Week starts" setting (Mon or Sun). */
+  function weekStartOf(d){ return S.ws===6?addDays(d,-d.getDay()):mondayOf(d); }
+  /* Week A/B label for a date: parity of whole weeks since the anchor's week.
+     Weeks follow the "Week starts" setting, so with Sunday-first weeks a
+     Sunday belongs to the Mon–Sat after it, not the one before. */
   function weekLabel(d){
     if(!S.ab) return '';
     const anchor=parseYmd(S.abAnchor); if(!anchor) return '';
-    const diff=Math.round((mondayOf(d)-mondayOf(anchor))/(7*864e5));
+    const diff=Math.round((weekStartOf(d)-weekStartOf(anchor))/(7*864e5));
     return ((diff%2)+2)%2===0?'A':'B';
   }
   function isCancelled(id,ds){ return D.cancels.some(x=>x.id===id&&x.date===ds); }
@@ -664,16 +677,17 @@
       .map(c=>({...c,s:toMin(c.start),e:toMin(c.end),cancelled:isCancelled(c.id,ds)}))
       .sort((a,b)=>a.s-b.s||a.e-b.e);
   }
-  /* First non-cancelled class after (date, minute), searching up to 3 weeks. */
+  /* First non-cancelled class after (date, minute), searching up to ~2 months
+     so a long break still shows when classes come back. */
   function nextClassFrom(d,min){
-    for(let i=0;i<21;i++){
+    for(let i=0;i<62;i++){
       const day=addDays(d,i);
       const c=classesOn(day).find(c=>!c.cancelled&&(i>0||c.s>min));
       if(c) return {c,day,i};
     }
     return null;
   }
-  function whenLabel(i,day){ return i===0?'today':i===1?'tomorrow':DAYS_FULL[dayIdx(day)]+(i>6?' '+MONTHS[day.getMonth()]+' '+day.getDate():''); }
+  function whenLabel(i,day){ return i===0?'today':i===1?'tomorrow':DAYS_FULL[dayIdx(day)]+(i>6?', '+MONTHS[day.getMonth()]+' '+day.getDate():''); }
   function nextHoliday(){
     const t=ymd(today());
     return D.holidays.filter(h=>h.end>=t).sort((a,b)=>a.start.localeCompare(b.start))[0]||null;
@@ -694,9 +708,9 @@
   function metaChips(c){
     let h='';
     if(c.code) h+=`<span class="chip c">${esc(c.code)}</span>`;
-    if(c.room) h+=`<span class="chip">📍 ${esc(c.room)}</span>`;
+    if(c.room) h+=`<span class="chip" title="${esc(c.room)}">📍 ${esc(c.room)}</span>`;
     if(c.type) h+=`<span class="chip">${esc(c.type)}</span>`;
-    if(c.teacher) h+=`<span class="chip">${esc(c.teacher)}</span>`;
+    if(c.teacher) h+=`<span class="chip" title="${esc(c.teacher)}">${esc(c.teacher)}</span>`;
     if(S.ab&&c.week) h+=`<span class="chip">Week ${esc(c.week)}</span>`;
     return h;
   }
@@ -737,6 +751,7 @@
 
   function renderFooter(){
     const parts=[];
+    if(!storageOK&&D.classes.length) parts.push(`<button class="pill warn" data-act="nosave" title="Open Settings">⚠ Not saved on this device — tap for the portable link</button>`);
     const h=nextHoliday(), t=ymd(today());
     if(h){
       if(h.start<=t) parts.push(`<span class="pill gold">${h.kind==='exam'?'📝':'🏖'} ${esc(h.name)} · ${h.end===t?'ends today':'until '+fmtDate(parseYmd(h.end))}</span>`);
@@ -865,10 +880,7 @@
      8. RENDERING — week grid
      ========================================================================== */
   function renderWeek(main){
-    const startShift=S.ws===6?-1:0;                       // Sunday-first weeks start a day earlier
-    let first=mondayOf(viewDate);
-    if(startShift&&dayIdx(viewDate)===6) first=addDays(first,7);
-    first=addDays(first,startShift);
+    const first=weekStartOf(viewDate);
     const all=[...Array(7)].map((_,i)=>addDays(first,i));
     const days=all.filter(d=>{
       const i=dayIdx(d); if(i<5) return true;
@@ -884,7 +896,7 @@
     const range=(hi-lo)*60;
     const pct=m=>((m-lo*60)/range*100).toFixed(3)+'%';
     const t=today(), min=nowMin();
-    const wl=weekLabel(first)||weekLabel(addDays(first,1));
+    const wl=weekLabel(first);
     const thisWeek=days.some(d=>sameDay(d,t));
 
     let gut='';
@@ -896,13 +908,23 @@
       const ex=holidayOn(ds,'exam');
       heads+=`<div class="wk-dh${isT?' today':''}"${ex?` title="${esc(ex.name)}"`:''}><b>${DAYS[dayIdx(d)]}</b>${d.getDate()}${ex?' 📝':''}</div>`;
       const hol=holidayOn(ds,'holiday');
-      // Greedy lanes so overlapping classes sit side by side.
-      const lanes=[]; const placed=per[di].map(c=>{ let l=lanes.findIndex(e=>e<=c.s); if(l<0){ l=lanes.length; lanes.push(0); } lanes[l]=c.e; return {c,l}; });
-      const n=Math.max(1,lanes.length);
+      // Overlapping classes sit side by side. Lanes are counted per cluster of
+      // classes that actually overlap, so a clash at 1 pm doesn't squeeze the
+      // unrelated 10 am class too.
+      const placed=[]; let cluster=[], lanes=[], clusterEnd=-1;
+      const flush=()=>{ const n=Math.max(1,lanes.length); cluster.forEach(p=>p.n=n); cluster=[]; lanes=[]; clusterEnd=-1; };
+      per[di].forEach(c=>{
+        if(cluster.length&&c.s>=clusterEnd) flush();
+        let l=lanes.findIndex(e=>e<=c.s); if(l<0){ l=lanes.length; lanes.push(0); }
+        lanes[l]=c.e;
+        const p={c,l}; cluster.push(p); placed.push(p);
+        clusterEnd=Math.max(clusterEnd,c.e);
+      });
+      flush();
       let blocks='';
-      placed.forEach(({c,l})=>{
+      placed.forEach(({c,l,n})=>{
         const now=isT&&!c.cancelled&&min>=c.s&&min<c.e;
-        blocks+=`<div class="bl${c.cancelled?' cxl':''}${now?' now':''}" style="--c:${colorOf(c)};top:${pct(c.s)};height:calc(${((c.e-c.s)/range*100).toFixed(3)}% - 2px);left:calc(${(l/n*100).toFixed(2)}% + 2px);width:calc(${(100/n).toFixed(2)}% - 4px)" data-act="edit" data-id="${c.id}" title="${esc(c.title+' · '+fmtT(c.s)+'–'+fmtT(c.e)+(c.room?' · '+c.room:''))}">
+        blocks+=`<div class="bl${c.cancelled?' cxl':''}${now?' now':''}" style="--c:${colorOf(c)};top:${pct(c.s)};height:calc(${((c.e-c.s)/range*100).toFixed(3)}% - 2px);left:calc(${(l/n*100).toFixed(2)}% + 2px);width:calc(${(100/n).toFixed(2)}% - 4px)" data-act="edit" data-id="${c.id}" tabindex="0" role="button" title="${esc(c.title+' · '+fmtT(c.s)+'–'+fmtT(c.e)+(c.room?' · '+c.room:''))}" aria-label="${esc(c.title+', '+DAYS_FULL[c.day]+' '+fmtT(c.s)+' to '+fmtT(c.e)+(c.cancelled?', cancelled':''))}">
           <b>${c.sticker?esc(c.sticker)+' ':''}${esc(c.code||c.title)}</b><span>${fmtT(c.s)}</span>${c.room?`<span>${esc(c.room)}</span>`:''}</div>`;
       });
       const line=isT&&min>=lo*60&&min<=hi*60?`<div class="now-line" style="top:${pct(min)}"></div>`:'';
@@ -940,6 +962,7 @@
   /* ==========================================================================
      9. MAIN-AREA EVENTS (one delegated listener)
      ========================================================================== */
+  $('ft').addEventListener('click',e=>{ if(e.target.closest('[data-act="nosave"]')) openPanel('pSet'); });
   $('main').addEventListener('click',e=>{
     const a=e.target.closest('[data-act]');
     if(a){
@@ -960,8 +983,10 @@
     const it=e.target.closest('.it'); if(it) openEditor(it.dataset.id);
   });
   $('main').addEventListener('keydown',e=>{
-    if(e.key!=='Enter') return;
-    const it=e.target.closest('.it'); if(it&&e.target===it) openEditor(it.dataset.id);
+    if(e.key!=='Enter'&&e.key!==' ') return;
+    const it=e.target.closest('.it'), bl=e.target.closest('.bl');
+    if(it&&e.target===it){ e.preventDefault(); openEditor(it.dataset.id); }
+    else if(bl&&e.target===bl){ e.preventDefault(); openEditor(bl.dataset.id); }
   });
 
   /* Device detection. Not user-agent sniffing: we ask the browser whether the
@@ -1010,14 +1035,24 @@
   /* ==========================================================================
      10. PANELS
      ========================================================================== */
+  /* Focus moves into a panel when it opens and back to whatever opened it
+     when it closes, so keyboard users never end up "nowhere". */
+  let returnFocus=null;
   function openPanel(id){
+    if(!document.querySelector('.panel.open')) returnFocus=document.activeElement;
     document.querySelectorAll('.panel.open').forEach(p=>p.classList.remove('open'));
     if(id==='pImport') prepImport();
     if(id==='pHol') prepHol();
     if(id==='pSet') prepSettings();
-    $(id).classList.add('open');
+    const p=$(id); p.classList.add('open');
+    setTimeout(()=>{ if(p.contains(document.activeElement)) return; const f=p.querySelector('.p-body input:not([type=color]), .p-body textarea, .p-body select, .p-body button'); (f||p.querySelector('.p-hd button')).focus({preventScroll:true}); },30);
   }
-  function closePanels(){ document.querySelectorAll('.panel.open').forEach(p=>p.classList.remove('open')); }
+  function closePanels(){
+    const was=!!document.querySelector('.panel.open');
+    document.querySelectorAll('.panel.open').forEach(p=>p.classList.remove('open'));
+    if(was&&returnFocus&&document.contains(returnFocus)&&returnFocus.offsetParent!==null) returnFocus.focus({preventScroll:true});
+    returnFocus=null;
+  }
   document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',closePanels));
   document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePanels(); });
   $('importBtn').onclick=()=>openPanel('pImport');
@@ -1033,7 +1068,7 @@
   function tg(id,onPick){
     const el=$(id);
     el.addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; set(b.dataset.v); onPick(b.dataset.v); });
-    function set(v){ el.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.v===String(v))); }
+    function set(v){ el.querySelectorAll('button').forEach(b=>{ const on=b.dataset.v===String(v); b.classList.toggle('on',on); b.setAttribute('aria-pressed',on); }); }
     return set;
   }
 
@@ -1047,7 +1082,7 @@
 
   function drawEdColors(){
     const custom=edColor&&!PALETTE.includes(edColor);
-    $('fColors').innerHTML=PALETTE.map(c=>`<div class="sw${c===edColor?' on':''}" style="--c:${c}" data-c="${c}"></div>`).join('')
+    $('fColors').innerHTML=PALETTE.map(c=>`<button type="button" class="sw${c===edColor?' on':''}" style="--c:${c}" data-c="${c}" aria-label="Colour ${c}" aria-pressed="${c===edColor}"></button>`).join('')
       +`<label class="sw-cu${custom?' on':''}" title="Custom colour"><input type="color" id="fColorIn" value="${isHex(edColor)?edColor:'#a78bfa'}"></label>`;
     $('fColorIn').addEventListener('input',e=>{ edColor=e.target.value; drawEdColors(); });
   }
@@ -1263,13 +1298,13 @@ Rules:
     save(); render();
   });
   const setAbNow=tg('sAbNow',v=>{
-    const mon=mondayOf(today());
-    S.abAnchor=ymd(v==='A'?mon:addDays(mon,-7));
+    const ws=weekStartOf(today());
+    S.abAnchor=ymd(v==='A'?ws:addDays(ws,-7));
     save(); render();
   });
   function drawAccents(){
     const custom=!ACCENTS.includes(S.accent);
-    $('sAccent').innerHTML=ACCENTS.map(c=>`<div class="sw${c===S.accent?' on':''}" style="--c:${c}" data-c="${c}"></div>`).join('')
+    $('sAccent').innerHTML=ACCENTS.map(c=>`<button type="button" class="sw${c===S.accent?' on':''}" style="--c:${c}" data-c="${c}" aria-label="Accent ${c}" aria-pressed="${c===S.accent}"></button>`).join('')
       +`<label class="sw-cu${custom?' on':''}" title="Custom colour"><input type="color" id="sAccIn" value="${isHex(S.accent)?S.accent:DEF.accent}"></label>`;
     $('sAccIn').addEventListener('input',e=>{ S.accent=e.target.value; save(); applyTheme(); drawAccents(); });
   }
@@ -1463,7 +1498,23 @@ Rules:
   setInterval(tick,20000);
   document.addEventListener('visibilitychange',()=>{ if(!document.hidden) tick(); });
 
+  /* The same widget open twice (two tabs, or Notion plus a browser on one
+     computer): when the other copy saves, take its data straight away —
+     otherwise this copy's next save would overwrite those edits with stale data. */
+  window.addEventListener('storage',e=>{
+    if(e.key!==KEY||e.newValue==null) return;
+    try{
+      const p=JSON.parse(e.newValue);
+      S={...DEF,...(p.s||{})}; D=sanitizeData(p.d);
+      applyTheme(); render();
+      if($('pSet').classList.contains('open')) prepSettings();
+      if($('pHol').classList.contains('open')) drawHolList();
+    }catch(err){}
+  });
+
   const hadLocal=loadLocal();
+  // Probe once whether this browser lets the embed save at all.
+  try{ localStorage.setItem(KEY+'_probe','1'); localStorage.removeItem(KEY+'_probe'); }catch(e){ storageOK=false; }
   applyTheme();
   detectDevice();
   render();

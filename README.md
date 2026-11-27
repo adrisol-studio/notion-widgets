@@ -127,6 +127,8 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
   - **Attendance link** — paste your Notion "Today's Attendance" page link and a **Log attendance** button appears during class
   - **Portable link** — packs the whole timetable into the embed link (`#d=…`), so the same timetable shows on every device; plus copy-backup / restore
   - **Adapts to the device** — detects touch vs mouse and the embed's own width (phone / tablet / desktop), so it also works in the Notion mobile app: bigger tap targets on touch, swipe left / right between days, long course names wrap on phones, the week grid scrolls sideways on phones (opening on today, with hours and day names pinned), and form fields don't trigger iPhone zoom
+  - **Safe with your data** — if the browser won't let the embed save (private mode, blocked storage) a warning points you to the portable link; the same widget open in two tabs stays in sync instead of overwriting each other
+  - **Keyboard friendly** — every button, class and colour is reachable with Tab, opens with Enter / Space, panels close with Esc and return focus where you were
   - **Samples** — try it before importing: a hypothetical **B.Tech CSE** 3rd-semester timetable (Mon–Sat, labs, tutorials, mid-sem exams + Diwali break) or a **General college** timetable
   - Accent colour, 12 / 24 h, week starts Mon / Sun, zoom 70 – 140 %; `?instance=name` keeps several copies on one page separate
 
