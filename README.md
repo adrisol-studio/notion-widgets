@@ -17,6 +17,7 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
 | 🌧 Matrix Rain | https://adrisol-studio.github.io/notion-widgets/widget-matrix.html |
 | 🗓 Timetable | https://adrisol-studio.github.io/notion-widgets/widget-timetable.html |
 | 🎓 GPA Calculator | https://adrisol-studio.github.io/notion-widgets/widget-gpa.html |
+| 🎧 Ambient Sounds | https://adrisol-studio.github.io/notion-widgets/widget-sounds.html |
 
 ---
 
@@ -37,6 +38,8 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
 | Timetable | Narrow | 340px | 520px |
 | GPA Calculator | Full | 560px | 640px |
 | GPA Calculator | Narrow | 340px | 560px |
+| Ambient Sounds | Full | 560px | 560px |
+| Ambient Sounds | Narrow | 340px | 720px |
 
 ---
 
@@ -144,3 +147,13 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
   - **Portable link** (`#d=…`), copy-backup / restore, a warning when the browser won't let the embed save, and two open copies stay in sync
   - **Adapts to the device** — course rows stack on phones, bigger tap targets on touch, fields that don't trigger iPhone zoom, and a compact header so Settings stays on screen in narrow embeds at any zoom; keyboard friendly throughout
   - Accent colour, 2 or 3 decimals, zoom 70 – 140 %, sample grades for each scale; `?instance=name` keeps several copies on one page separate
+
+- `widget-sounds.html` — Ambient sound mixer with a Notion-native base (Notion's dark grey / white, Inter) and its own mood: soft glowing tiles, each sound in its own colour, with little level bars while it plays. Features:
+  - **Eight sounds** — Rain, Thunder, Wind, Waves, Fire, Café, Brown noise and Pink noise, all **made live in the browser** (Web Audio) — no audio files, nothing downloaded, works offline. Rain has drops, fire crackles and pops, thunder rolls in now and then, waves swell and break, the café has cups clinking
+  - **Mix freely** — tap a sound to switch it on, each with its own volume; levels are balanced so the same slider position sounds equally loud, and a limiter keeps big mixes from distorting
+  - **Play / pause** with gentle fades (or instant), **master volume**, **Space** to play / pause
+  - **Sleep timer** — 15 / 30 / 45 / 60 / 90 min with a countdown in the header; the last seconds fade out, then it pauses
+  - **Mixes** — Rainy café, Cozy cabin, Thunderstorm, Ocean breeze, Deep focus, Library hush, plus up to 20 of your own (save, rename by saving again, delete with undo)
+  - Opens paused with your last mix ready (browsers only allow sound after a tap) and tells you if the browser blocked sound; a warning if the browser won't save your mix; two open copies share settings and saved mixes
+  - **Adapts to the device** — 4 / 3 / 2 / 1 columns by width, bigger sliders and buttons on touch, keyboard friendly; accent colour, Auto / Dark / Light, zoom 70 – 140 %; `?instance=name` keeps several copies separate
+  - On iPhone, the silent switch also mutes web audio — turn it off if you hear nothing
