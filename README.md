@@ -18,6 +18,7 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
 | 🗓 Timetable | https://adrisol-studio.github.io/notion-widgets/widget-timetable.html |
 | 🎓 GPA Calculator | https://adrisol-studio.github.io/notion-widgets/widget-gpa.html |
 | 🎧 Ambient Sounds | https://adrisol-studio.github.io/notion-widgets/widget-sounds.html |
+| 🫧 Breathe | https://adrisol-studio.github.io/notion-widgets/widget-breathe.html |
 
 ---
 
@@ -40,6 +41,8 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
 | GPA Calculator | Narrow | 340px | 560px |
 | Ambient Sounds | Full | 560px | 560px |
 | Ambient Sounds | Narrow | 340px | 720px |
+| Breathe | — | 420px | 520px |
+| Breathe | Compact | 360px | 300px |
 
 ---
 
@@ -157,3 +160,13 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
   - Opens paused with your last mix ready (browsers only allow sound after a tap) and tells you if the browser blocked sound; a warning if the browser won't save your mix; two open copies share settings and saved mixes
   - **Adapts to the device** — 4 / 3 / 2 / 1 columns by width, bigger sliders and buttons on touch, keyboard friendly; accent colour, Auto / Dark / Light, zoom 70 – 140 %; `?instance=name` keeps several copies separate
   - On iPhone, the silent switch also mutes web audio — turn it off if you hear nothing
+
+- `widget-breathe.html` — Guided breathing with a Notion-native base and its own calm mood: a glowing orb that grows as you breathe in, holds, and shrinks as you breathe out, with the phase and a countdown inside it and a ring that fills as the session goes on. Features:
+  - **Patterns** — Box (4-4-4-4), 4-7-8, Calm (4-6), Coherent (5.5-5.5) and **Custom** (breathe in / hold / out / hold, half-second steps)
+  - **Sessions** — 1, 3, 5 or 10 minutes, or open-ended; a session always ends on a whole breath (3 min of Box = 11 breaths), then shows "Well done" with the time and breath count
+  - **Start / Pause / Resume / Reset** — pausing keeps your exact place; Space starts / pauses, R resets; pattern and length lock during a session
+  - **Soft tone** on each phase (rising for in, falling for out, a quiet tick for holds) with its own volume, and an optional **phone vibration**
+  - **Today** minutes and a **day streak** (days with at least 1 minute), kept on this device
+  - **Orb colours** — Aurora, Ocean, Sunset, Forest, Mono (dark text on the light orbs so the countdown stays readable); Auto / Dark / Light; zoom 70 – 140 %; hide the countdown numbers if you prefer
+  - **Calm for everyone** — respects "reduce motion" (the orb brightens and dims instead of changing size); screen readers hear only the phase changes, not every second
+  - **Adapts to the embed** — the orb sizes itself from both width and height; short embeds move the session length into Settings and drop the small line under the orb; touch-sized buttons; keyboard friendly; `?instance=name` keeps copies separate
