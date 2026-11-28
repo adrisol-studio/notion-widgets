@@ -19,6 +19,7 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
 | 🎓 GPA Calculator | https://adrisol-studio.github.io/notion-widgets/widget-gpa.html |
 | 🎧 Ambient Sounds | https://adrisol-studio.github.io/notion-widgets/widget-sounds.html |
 | 🫧 Breathe | https://adrisol-studio.github.io/notion-widgets/widget-breathe.html |
+| ❝ Daily Quote | https://adrisol-studio.github.io/notion-widgets/widget-quote.html |
 
 ---
 
@@ -43,6 +44,8 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
 | Ambient Sounds | Narrow | 340px | 720px |
 | Breathe | — | 420px | 520px |
 | Breathe | Compact | 360px | 300px |
+| Daily Quote | Banner | 600px | 260px |
+| Daily Quote | Small | 320px | 220px |
 
 ---
 
@@ -170,3 +173,11 @@ Hosted on GitHub Pages — embed using Notion's `/embed` block.
   - **Orb colours** — Aurora, Ocean, Sunset, Forest, Mono (dark text on the light orbs so the countdown stays readable); Auto / Dark / Light; zoom 70 – 140 %; hide the countdown numbers if you prefer
   - **Calm for everyone** — respects "reduce motion" (the orb brightens and dims instead of changing size); screen readers hear only the phase changes, not every second
   - **Adapts to the embed** — the orb sizes itself from both width and height; short embeds move the session length into Settings and drop the small line under the orb; touch-sized buttons; keyboard friendly; `?instance=name` keeps copies separate
+
+- `widget-quote.html` — Quote of the day with a Notion-native base and its own mood: type first — the quote is set large and sizes itself to fit any embed, with an accent quote mark. Features:
+  - **52 built-in quotes** in Study, Motivation, Wisdom, Calm and Literary — only lines whose authors are well documented (commonly misattributed quotes are left out)
+  - **New quote every day** (the same one all day; each quote appears once before any repeats and never twice in a row), **every hour**, or **every visit**
+  - **Previous / next** (also ← / → keys and swiping on phones), **♥ favourites** with their own category, **copy** (with a select-and-copy fallback when the embed blocks the clipboard)
+  - **Your own quotes** — add, edit, delete with undo, or **paste a list** ("Quote — Author" per line, or a CSV with a Quote,Author header such as the planner's quotes.csv); duplicates are skipped
+  - **Looks** — Modern, Serif or Handwritten type; Plain, soft Glow or Card background; centred or left-aligned; accent colour; text size 70 – 140 %; Auto / Dark / Light
+  - **Adapts to the embed** — text fits from tiny 260 × 160 boxes to wide banners; touch-sized buttons; keyboard friendly; two open copies share favourites and your quotes; `?instance=name` keeps copies separate

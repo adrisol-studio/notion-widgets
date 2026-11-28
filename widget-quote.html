@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daily Quote</title>
+
+  <!--
+    ============================================================================
+    DAILY QUOTE  —  self-contained quote-of-the-day widget for Notion (/embed)
+    ============================================================================
+    • One quote at a time in large, elegant type that sizes itself to fit the
+      embed. A new quote each day (the same one all day), or a new one on
+      every visit / every hour.
+    • Categories: Study, Motivation, Wisdom, Calm, Literary, plus your
+      Favourites and your own quotes. Previous / next, ♥ favourite, copy.
+    • Add your own quotes one at a time or paste a list ("quote — author" per
+      line, or the template's quotes.csv "Quote,Author,Tags" format).
+    • Notion-native base (#191919 / white, Inter) with its own mood: type
+      first — choose Modern, Serif or Handwritten, plain / soft-glow / card
+      backgrounds, centred or left-aligned.
+    • Built-in quotes are limited to ones whose authors are well documented.
+    • Saved to localStorage ('qte1_<instance>').
+
+    SECTIONS
+      <style>   tokens · header · quote stage · controls · panels · phone
+      <body>    header (category), quote, controls, settings, add-quote panel
+      <script>  quotes · state · picking (daily seed / visit / hour) · fit
+                text · rendering · favourites · own quotes · import ·
+                settings · init
+    ============================================================================
+  -->
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Instrument+Serif:ital@0;1&family=Caveat:wght@500;600&display=swap" rel="stylesheet">
+
+  <style>
+    /* ===== Tokens ===== */
+    :root { --acc: #e9a46a; }
+    [data-theme="dark"] {
+      --bg: #191919; --card: #202020; --card2: #262626; --card3: #303030;
+      --line: rgba(255,255,255,.065); --line2: rgba(255,255,255,.11);
+      --text: rgba(255,255,255,.92); --sub: rgba(255,255,255,.6); --faint: rgba(255,255,255,.36);
+      --red: #ff7369; --shadow: 0 12px 40px rgba(0,0,0,.5);
+    }
+    [data-theme="light"] {
+      --bg: #ffffff; --card: #ffffff; --card2: #f7f7f5; --card3: #ececea;
+      --line: rgba(55,53,47,.09); --line2: rgba(55,53,47,.16);
+      --text: #37352f; --sub: rgba(55,53,47,.65); --faint: rgba(55,53,47,.42);
+      --red: #d44c47; --shadow: 0 12px 40px rgba(15,15,15,.12);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'Inter', ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+    button, input, textarea, select { font-family: inherit; color: inherit; }
+    .app { position: relative; width: 100%; height: 100%; display: flex; flex-direction: column; overflow: hidden; container-type: size; container-name: app; }
+    button, [data-act] { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    button:focus-visible, select:focus-visible, .sw-cu:focus-within { outline: 2px solid var(--acc); outline-offset: 2px; }
+
+    /* ===== Header ===== */
+    .hd { display: flex; align-items: center; gap: 6px; padding: 10px 12px 4px; flex-shrink: 0; }
+    .ib { width: 28px; height: 28px; border-radius: 6px; border: none; background: none; cursor: pointer; display: grid; place-items: center; color: var(--sub); flex-shrink: 0; transition: background .12s, color .12s; }
+    .ib:hover { background: var(--card2); color: var(--text); }
+    .ib svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .cat { appearance: none; -webkit-appearance: none; border: 1px solid var(--line2); background: var(--card) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 8px center / 12px; border-radius: 20px; padding: 4px 26px 4px 11px; font-size: 12px; font-weight: 500; color: var(--sub); cursor: pointer; max-width: 160px; }
+    .cat:hover { color: var(--text); }
+    [data-theme="dark"] .cat { color-scheme: dark; }
+    .hd-sp { flex: 1; }
+    .when { font-size: 11.5px; color: var(--faint); white-space: nowrap; }
+
+    /* ===== Quote stage ===== */
+    .stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 8px clamp(14px, 6cqw, 48px); position: relative; overflow: hidden; }
+    /* Soft glow painted on the whole widget (not just the quote area), so it
+       fades out smoothly instead of stopping at an edge. */
+    .app.bg-glow { background:
+        radial-gradient(55% 45% at 22% 32%, color-mix(in srgb, var(--acc) 18%, transparent), transparent 72%),
+        radial-gradient(55% 50% at 82% 72%, color-mix(in srgb, var(--acc) 10%, transparent), transparent 72%),
+        var(--bg); }
+    .stage.bg-card .qbox { background: var(--card); border: 1px solid var(--line2); border-radius: 16px; padding: clamp(16px, 5cqmin, 34px); box-shadow: var(--shadow); }
+    .qbox { position: relative; max-width: 760px; width: 100%; max-height: 100%; display: flex; flex-direction: column; }
+    .align-center .qbox { text-align: center; align-items: center; }
+    .align-left .qbox { text-align: left; align-items: flex-start; }
+    .mark { font-family: 'Instrument Serif', Georgia, serif; color: var(--acc); font-size: calc(var(--fs, 28px) * 2.1); line-height: .6; height: calc(var(--fs, 28px) * .9); user-select: none; opacity: .9; }
+    .qtext { font-size: var(--fs, 28px); line-height: 1.28; letter-spacing: -.012em; font-weight: 500; overflow-wrap: anywhere; transition: opacity .25s, transform .25s; }
+    .f-serif .qtext { font-family: 'Instrument Serif', Georgia, 'Times New Roman', serif; font-weight: 400; letter-spacing: -.005em; line-height: 1.2; }
+    .f-hand .qtext { font-family: 'Caveat', 'Segoe Print', cursive; font-weight: 500; letter-spacing: 0; line-height: 1.15; font-size: calc(var(--fs, 28px) * 1.18); }
+    .qauthor { margin-top: calc(var(--fs, 28px) * .5); font-size: clamp(12px, calc(var(--fs, 28px) * .45), 15px); color: var(--sub); font-weight: 500; display: flex; align-items: center; gap: 8px; }
+    .qauthor::before { content: ''; width: 18px; height: 1.5px; background: var(--acc); border-radius: 2px; }
+    .align-center .qauthor::before { display: none; }
+    .qbox.swap .qtext, .qbox.swap .qauthor { opacity: 0; transform: translateY(6px); }
+    @media (prefers-reduced-motion: reduce) { .qtext { transition: none; } }
+    .empty { text-align: center; color: var(--sub); font-size: 13px; line-height: 1.6; max-width: 280px; }
+    .empty b { color: var(--text); }
+
+    /* ===== Controls ===== */
+    .ctl { flex-shrink: 0; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 4px 12px 10px; }
+    .ctl .ib { width: 34px; height: 34px; border-radius: 50%; }
+    .ctl .ib svg { width: 17px; height: 17px; }
+    .ctl .ib.fav.on { color: #f43f5e; }
+    .ctl .ib.fav.on svg { fill: currentColor; }
+    .pos { font-size: 11px; color: var(--faint); min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; }
+
+    /* ===== Panels ===== */
+    .panel { position: absolute; inset: 0; z-index: 50; background: var(--bg); display: flex; flex-direction: column; opacity: 0; pointer-events: none; transform: translateY(10px); visibility: hidden; transition: opacity .22s, transform .22s, visibility 0s linear .22s; }
+    .panel.open { opacity: 1; pointer-events: auto; transform: none; visibility: visible; transition-delay: 0s; }
+    .p-hd { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+    .p-hd span { font-weight: 700; font-size: 14px; flex: 1; }
+    .p-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; overscroll-behavior: contain; }
+    .lbl { font-size: 11.5px; font-weight: 500; color: var(--sub); margin-bottom: 6px; display: block; }
+    .box { background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .tg { display: flex; background: var(--card2); border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+    .tg button { flex: 1; border: none; background: none; padding: 6px 4px; font-size: 12px; font-weight: 500; border-radius: 6px; cursor: pointer; color: var(--sub); white-space: nowrap; }
+    .tg button.on { background: var(--card3); color: var(--text); font-weight: 600; }
+    #sFont button[data-v="serif"] { font-family: 'Instrument Serif', Georgia, serif; font-size: 14px; }
+    #sFont button[data-v="hand"] { font-family: 'Caveat', cursive; font-size: 15px; }
+    .sw-row { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+    .sw { width: 24px; height: 24px; padding: 0; border-radius: 50%; border: 2px solid transparent; cursor: pointer; background: var(--c); }
+    .sw.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--bg) inset; }
+    .sw-cu { position: relative; width: 24px; height: 24px; border-radius: 50%; overflow: hidden; background: conic-gradient(#f87171, #fbbf24, #34d399, #22d3ee, #818cf8, #e879f9, #f87171); cursor: pointer; border: 2px solid transparent; }
+    .sw-cu.on { border-color: var(--text); }
+    .sw-cu input { position: absolute; inset: -6px; opacity: 0; cursor: pointer; width: 40px; height: 40px; }
+    .zr { display: flex; align-items: center; gap: 10px; }
+    .zr input { flex: 1; accent-color: var(--acc); }
+    .zr span { font-size: 12px; font-weight: 600; color: var(--sub); min-width: 38px; text-align: right; }
+    .in, .ta { width: 100%; min-width: 0; background: var(--card); border: 1px solid var(--line2); border-radius: 6px; padding: 7px 10px; font-size: 13px; color: var(--text); outline: none; }
+    .ta { resize: vertical; min-height: 80px; line-height: 1.45; }
+    .in:focus, .ta:focus { border-color: var(--acc); }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .btn { border: none; border-radius: 6px; padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer; background: var(--card3); color: var(--text); white-space: nowrap; }
+    .btn.pri { background: var(--acc); color: #1b1b1b; }
+    .link { background: none; border: none; color: var(--sub); font-size: 12px; font-weight: 500; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+    .hint { font-size: 12px; color: var(--faint); line-height: 1.5; }
+    .hint b { color: var(--sub); }
+    .err { font-size: 12px; color: var(--red); }
+    .ok { font-size: 12px; color: var(--acc); font-weight: 600; }
+    .ml { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+    .ml-it { display: flex; align-items: flex-start; gap: 8px; padding: 7px 8px 7px 10px; border-radius: 8px; background: var(--card); border: 1px solid var(--line); font-size: 12.5px; }
+    .ml-it .tx { flex: 1; min-width: 0; line-height: 1.4; }
+    .ml-it .tx small { display: block; color: var(--faint); font-size: 11px; margin-top: 2px; }
+
+    .toast { position: absolute; left: 50%; bottom: 12px; transform: translate(-50%, 20px); background: var(--card3); color: var(--text); font-size: 12px; font-weight: 600; padding: 8px 12px; border-radius: 10px; box-shadow: var(--shadow); opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 100; width: max-content; max-width: calc(100% - 24px); display: flex; gap: 10px; align-items: center; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+    .toast button { border: none; background: none; color: var(--acc); font-weight: 700; font-size: 12px; cursor: pointer; }
+
+    /* ===== Small embeds ===== */
+    @container app (max-height: 240px) {
+      .hd { padding: 6px 10px 0; }
+      .ctl { padding: 0 10px 6px; }
+      .ctl .ib { width: 30px; height: 30px; }
+      .when, .pos { display: none; }
+    }
+    @container app (max-width: 300px) { .when { display: none; } }
+    @media (pointer: coarse) {
+      .ib { width: 36px; height: 36px; }
+      .ctl .ib { width: 40px; height: 40px; }
+      .cat { padding: 7px 28px 7px 12px; font-size: 13px; }
+      .in, .ta, .cat { font-size: 16px; }
+      .sw, .sw-cu { width: 30px; height: 30px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app" id="app">
+    <header class="hd">
+      <select class="cat" id="catSel" aria-label="Category"></select>
+      <button class="ib" id="gearBtn" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg></button>
+      <span class="hd-sp"></span>
+      <span class="when" id="when"></span>
+    </header>
+
+    <div class="stage" id="stage">
+      <figure class="qbox" id="qbox">
+        <div class="mark" aria-hidden="true">“</div>
+        <blockquote class="qtext" id="qtext"></blockquote>
+        <figcaption class="qauthor" id="qauthor"></figcaption>
+      </figure>
+    </div>
+
+    <div class="ctl">
+      <button class="ib" id="prevBtn" title="Previous quote" aria-label="Previous quote"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+      <button class="ib fav" id="favBtn" title="Favourite" aria-label="Favourite" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-9.2-8.6C1.4 8.6 3 5 6.5 5c2 0 3.5 1.2 5.5 3.3C14 6.2 15.5 5 17.5 5 21 5 22.6 8.6 21.2 11.4 19 15.6 12 20 12 20z"/></svg></button>
+      <span class="pos" id="pos"></span>
+      <button class="ib" id="copyBtn" title="Copy quote" aria-label="Copy quote"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></svg></button>
+      <button class="ib" id="nextBtn" title="Next quote" aria-label="Next quote"><svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg></button>
+    </div>
+
+    <!-- ===== Settings ===== -->
+    <div class="panel" id="pSet" role="dialog" aria-label="Settings">
+      <div class="p-hd"><span>Settings</span><button class="ib" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+      <div class="p-body">
+        <div><label class="lbl">New quote</label><div class="tg" id="sMode"><button data-v="day">Every day</button><button data-v="hour">Every hour</button><button data-v="visit">Every visit</button></div></div>
+        <div><label class="lbl">Font</label><div class="tg" id="sFont"><button data-v="modern">Modern</button><button data-v="serif">Serif</button><button data-v="hand">Handwritten</button></div></div>
+        <div class="row" style="gap:12px">
+          <div style="flex:1;min-width:140px"><label class="lbl">Background</label><div class="tg" id="sBg"><button data-v="plain">Plain</button><button data-v="glow">Glow</button><button data-v="card">Card</button></div></div>
+          <div style="flex:1;min-width:120px"><label class="lbl">Align</label><div class="tg" id="sAlign"><button data-v="center">Centre</button><button data-v="left">Left</button></div></div>
+        </div>
+        <div><label class="lbl">Theme</label><div class="tg" id="sTheme"><button data-v="auto">Auto</button><button data-v="dark">Dark</button><button data-v="light">Light</button></div></div>
+        <div><label class="lbl">Accent</label><div class="sw-row" id="sAccent"></div></div>
+        <div><label class="lbl" for="sZoom">Text size</label><div class="zr"><input type="range" id="sZoom" min="70" max="140" step="5"><span id="sZoomL"></span></div></div>
+        <div class="box">
+          <label class="lbl" style="margin:0">Your quotes</label>
+          <div class="row"><button class="btn pri" id="addBtn">+ Add a quote</button><button class="btn" id="importBtn">Paste a list…</button></div>
+          <div class="ml" id="myList"></div>
+        </div>
+        <div class="hint">The built-in quotes only use well-documented authors. Favourites ♥ and your own quotes are kept on this device.</div>
+        <div><button class="link" id="sReset">Reset settings, favourites &amp; your quotes</button></div>
+      </div>
+    </div>
+
+    <!-- ===== Add one quote ===== -->
+    <div class="panel" id="pAdd" role="dialog" aria-label="Add a quote">
+      <div class="p-hd"><span id="addTitle">Add a quote</span><button class="ib" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+      <div class="p-body">
+        <div><label class="lbl" for="aText">Quote</label><textarea class="ta" id="aText" maxlength="400" placeholder="Words worth remembering…"></textarea></div>
+        <div><label class="lbl" for="aAuthor">Author (optional)</label><input class="in" id="aAuthor" maxlength="80" placeholder="e.g. Seneca"></div>
+        <div class="err" id="aErr"></div>
+        <div class="row"><button class="btn pri" id="aSave">Save quote</button><button class="btn" data-close>Cancel</button></div>
+      </div>
+    </div>
+
+    <!-- ===== Paste a list ===== -->
+    <div class="panel" id="pImport" role="dialog" aria-label="Paste quotes">
+      <div class="p-hd"><span>Paste a list of quotes</span><button class="ib" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+      <div class="p-body">
+        <div class="hint">One quote per line, like <b>Quote — Author</b>. A CSV with a <b>Quote,Author</b> header (like the planner's quotes.csv) works too.</div>
+        <textarea class="ta" id="iText" style="min-height:160px" spellcheck="false" placeholder="Stay hungry. — Someone&#10;Another quote — Another author"></textarea>
+        <div id="iMsg"></div>
+        <div class="row"><button class="btn pri" id="iGo" disabled>Add quotes</button><button class="btn" data-close>Cancel</button></div>
+      </div>
+    </div>
+
+    <!-- ===== Copy fallback ===== -->
+    <div class="panel" id="pCopy" role="dialog" aria-label="Copy" style="z-index:60">
+      <div class="p-hd"><span>Copy this</span><button class="ib" data-close title="Close"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>
+      <div class="p-body"><div class="hint">This page doesn't allow automatic copying. The text is selected — press <b>Ctrl + C</b> (or <b>⌘ + C</b>), or long-press and choose <b>Copy</b>.</div><textarea class="ta" id="cpText" readonly></textarea></div>
+    </div>
+
+    <div class="toast" id="toast" role="status"><span id="toastMsg"></span><button id="toastBtn" hidden></button></div>
+  </div>
+
+  <script>
+  /* ==========================================================================
+     1. QUOTES — [text, author, category]. Authors here are well documented;
+        widely misattributed lines are deliberately left out.
+     ========================================================================== */
+  const Q=[
+    // Study
+    ['The beautiful thing about learning is that nobody can take it away from you.','B.B. King','study'],
+    ['Education is the most powerful weapon which you can use to change the world.','Nelson Mandela','study'],
+    ['The more that you read, the more things you will know. The more that you learn, the more places you’ll go.','Dr. Seuss','study'],
+    ['If I have seen further it is by standing on the shoulders of Giants.','Isaac Newton','study'],
+    ['To know what you know and what you do not know, that is true knowledge.','Confucius','study'],
+    ['The roots of education are bitter, but the fruit is sweet.','Aristotle','study'],
+    ['The important thing is not to stop questioning.','Albert Einstein','study'],
+    ['Imagination is more important than knowledge.','Albert Einstein','study'],
+    ['Nothing in life is to be feared, it is only to be understood.','Marie Curie','study'],
+    ['Knowledge is power.','Francis Bacon','study'],
+    ['Genius is one percent inspiration and ninety-nine percent perspiration.','Thomas Edison','study'],
+    ['I have always imagined that Paradise will be a kind of library.','Jorge Luis Borges','study'],
+    // Motivation
+    ['It is not that we have a short time to live, but that we waste a lot of it.','Seneca','motivation'],
+    ['Begin at once to live, and count each separate day as a separate life.','Seneca','motivation'],
+    ['The impediment to action advances action. What stands in the way becomes the way.','Marcus Aurelius','motivation'],
+    ['A journey of a thousand miles begins with a single step.','Laozi','motivation'],
+    ['Well done is better than well said.','Benjamin Franklin','motivation'],
+    ['The best way out is always through.','Robert Frost','motivation'],
+    ['Start where you are. Use what you have. Do what you can.','Arthur Ashe','motivation'],
+    ['You miss 100% of the shots you don’t take.','Wayne Gretzky','motivation'],
+    ['I am not afraid of storms, for I am learning how to sail my ship.','Louisa May Alcott','motivation'],
+    ['Not everything that is faced can be changed, but nothing can be changed until it is faced.','James Baldwin','motivation'],
+    ['All we have to decide is what to do with the time that is given us.','J.R.R. Tolkien','motivation'],
+    ['Even the smallest person can change the course of the future.','J.R.R. Tolkien','motivation'],
+    // Wisdom
+    ['The unexamined life is not worth living.','Socrates','wisdom'],
+    ['Waste no more time arguing about what a good man should be. Be one.','Marcus Aurelius','wisdom'],
+    ['If it is not right, do not do it; if it is not true, do not say it.','Marcus Aurelius','wisdom'],
+    ['Knowing others is intelligence; knowing yourself is true wisdom.','Laozi','wisdom'],
+    ['He who has a why to live can bear almost any how.','Friedrich Nietzsche','wisdom'],
+    ['I think, therefore I am.','René Descartes','wisdom'],
+    ['The mind is not a vessel to be filled, but a fire to be kindled.','Plutarch','wisdom'],
+    ['To live is the rarest thing in the world. Most people exist, that is all.','Oscar Wilde','wisdom'],
+    ['Difficulties strengthen the mind, as labour does the body.','Seneca','wisdom'],
+    ['We are all in the gutter, but some of us are looking at the stars.','Oscar Wilde','wisdom'],
+    // Calm
+    ['We suffer more often in imagination than in reality.','Seneca','calm'],
+    ['Isn’t it nice to think that tomorrow is a new day with no mistakes in it yet?','L.M. Montgomery','calm'],
+    ['Hope is the thing with feathers that perches in the soul.','Emily Dickinson','calm'],
+    ['Slow and steady wins the race.','Aesop','calm'],
+    ['You can’t use up creativity. The more you use, the more you have.','Maya Angelou','calm'],
+    ['Not all those who wander are lost.','J.R.R. Tolkien','calm'],
+    ['There is some good in this world, and it’s worth fighting for.','J.R.R. Tolkien','calm'],
+    ['I took a deep breath and listened to the old brag of my heart. I am, I am, I am.','Sylvia Plath','calm'],
+    // Literary (dark-academia mood)
+    ['A reader lives a thousand lives before he dies. The man who never reads lives only one.','George R.R. Martin','literary'],
+    ['One must always be careful of books, and what is inside them, for words have the power to change us.','Cassandra Clare','literary'],
+    ['So we beat on, boats against the current, borne back ceaselessly into the past.','F. Scott Fitzgerald','literary'],
+    ['I am no bird; and no net ensnares me: I am a free human being with an independent will.','Charlotte Brontë','literary'],
+    ['Whatever our souls are made of, his and mine are the same.','Emily Brontë','literary'],
+    ['There is no greater agony than bearing an untold story inside you.','Maya Angelou','literary'],
+    ['Do not go gentle into that good night.','Dylan Thomas','literary'],
+    ['Tell me, what is it you plan to do with your one wild and precious life?','Mary Oliver','literary'],
+    ['The only way out of the labyrinth of suffering is to forgive.','John Green','literary'],
+    ['We are all just walking each other home.','Ram Dass','literary']
+  ];
+  const BUILTIN=Q.map((q,i)=>({id:'b'+i,text:q[0],author:q[1],cat:q[2]}));
+  const CATS=[['all','All quotes'],['study','Study'],['motivation','Motivation'],['wisdom','Wisdom'],['calm','Calm'],['literary','Literary'],['fav','♥ Favourites'],['mine','My quotes']];
+  const ACCENTS=['#e9a46a','#4dab9a','#7aa2f7','#9a6dd7','#e255a1','#dfab01'];
+
+  /* ==========================================================================
+     2. STATE & PERSISTENCE
+     ========================================================================== */
+  const INSTANCE=new URLSearchParams(location.search).get('instance')||'default';
+  const KEY='qte1_'+INSTANCE;
+  const DEF={theme:'dark',accent:'#e9a46a',font:'modern',bg:'glow',align:'center',mode:'day',cat:'all',zoom:100};
+  let S={...DEF}, FAVS=[], MINE=[], storageOK=true;
+  let offset=0;              // how far prev/next has moved from today's pick
+  let visitSeed=Math.random();
+
+  const $=id=>document.getElementById(id);
+  const _mq=window.matchMedia('(prefers-color-scheme: dark)');
+  function effectiveTheme(){ return S.theme==='auto'?(_mq.matches?'dark':'light'):S.theme; }
+  function isHex(c){ return /^#[0-9a-f]{6}$/i.test(c||''); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  function uid(){ return Math.random().toString(36).slice(2,10); }
+  function clip(v,n){ return String(v==null?'':v).replace(/\s+/g,' ').trim().slice(0,n); }
+
+  function save(){ try{ localStorage.setItem(KEY,JSON.stringify({s:S,favs:FAVS,mine:MINE})); storageOK=true; }catch(e){ storageOK=false; } }
+  function clean(p){
+    const s=p&&p.s||{}, o={...DEF};
+    if(['auto','dark','light'].includes(s.theme)) o.theme=s.theme;
+    if(isHex(s.accent)) o.accent=s.accent;
+    if(['modern','serif','hand'].includes(s.font)) o.font=s.font;
+    if(['plain','glow','card'].includes(s.bg)) o.bg=s.bg;
+    if(['center','left'].includes(s.align)) o.align=s.align;
+    if(['day','hour','visit'].includes(s.mode)) o.mode=s.mode;
+    if(CATS.some(c=>c[0]===s.cat)) o.cat=s.cat;
+    const z=+s.zoom; if(z>=70&&z<=140) o.zoom=z;
+    const mine=(p&&Array.isArray(p.mine)?p.mine:[]).slice(0,500).map(q=>({id:/^c[a-z0-9]{4,12}$/.test(q&&q.id||'')?q.id:'c'+uid(),text:clip(q&&q.text,400),author:clip(q&&q.author,80),cat:'mine'})).filter(q=>q.text);
+    const ids=new Set([...BUILTIN,...mine].map(q=>q.id));
+    const favs=(p&&Array.isArray(p.favs)?p.favs:[]).filter(id=>ids.has(id)).slice(0,1000);
+    return {s:o,mine,favs};
+  }
+  function load(){ try{ const raw=localStorage.getItem(KEY); if(raw){ const c=clean(JSON.parse(raw)); S=c.s; MINE=c.mine; FAVS=c.favs; } }catch(e){} }
+
+  /* ==========================================================================
+     3. PICKING
+     A seeded shuffle of the current category: the seed depends on the day
+     (or hour, or a random number per visit), so "Every day" shows the same
+     quote all day and a different one tomorrow. Prev / next walk that order.
+     ========================================================================== */
+  function pool(){
+    const all=[...BUILTIN,...MINE];
+    if(S.cat==='all') return all;
+    if(S.cat==='fav') return all.filter(q=>FAVS.includes(q.id));
+    return all.filter(q=>q.cat===S.cat);
+  }
+  /* Whole days since 1 Jan 2020 in local time (DST-safe via rounding). */
+  function dayNum(d){ return Math.round((new Date(d.getFullYear(),d.getMonth(),d.getDate())-new Date(2020,0,1))/864e5); }
+  /* Where today's (or this hour's / this visit's) quote sits in the list.
+     Day N shows item N of a fixed shuffle, so every quote appears once
+     before any repeats, and never the same quote two days running. */
+  function baseIndex(n){
+    const d=new Date();
+    if(S.mode==='visit') return Math.floor(visitSeed*n);
+    if(S.mode==='hour') return (dayNum(d)*24+d.getHours())%n;
+    return dayNum(d)%n;
+  }
+  function seedNow(){ const d=new Date(); return S.mode==='visit'?-1:S.mode==='hour'?dayNum(d)*24+d.getHours():dayNum(d); }
+  function rng(seed){ let a=seed>>>0||1; return ()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+  /* A fixed shuffle per category (same order every day, so the daily walk
+     through it never repeats early). */
+  function order(){
+    const p=pool(), r=rng(1009+S.cat.length*7919+S.cat.charCodeAt(0));
+    const a=p.map(q=>q.id);
+    for(let i=a.length-1;i>0;i--){ const j=Math.floor(r()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+    return a;
+  }
+  function current(){
+    const o=order(); if(!o.length) return null;
+    const n=o.length, i=(((baseIndex(n)+offset)%n)+n)%n;
+    return {q:[...BUILTIN,...MINE].find(x=>x.id===o[i]), i, n};
+  }
+
+  /* ==========================================================================
+     4. FIT TEXT — largest size (within limits) that fits the stage
+     ========================================================================== */
+  function fit(){
+    const stage=$('stage'), box=$('qbox');
+    const W=stage.clientWidth, H=stage.clientHeight;
+    if(!W||!H) return;
+    const z=S.zoom/100, len=($('qtext').textContent||'').length;
+    // Start from a size that suits the quote's length, then shrink to fit.
+    let fs=Math.min(64,Math.max(15,(Math.sqrt(W*H/Math.max(40,len))*.62)))*z;
+    fs=Math.min(fs,W*.11*z);
+    box.style.setProperty('--fs',fs.toFixed(1)+'px');
+    let guard=0;
+    while((box.scrollHeight>H-4||box.scrollWidth>W+1)&&fs>11&&guard++<60){ fs*=.94; box.style.setProperty('--fs',fs.toFixed(1)+'px'); }
+  }
+  new ResizeObserver(()=>fit()).observe($('stage'));
+  if(document.fonts&&document.fonts.ready) document.fonts.ready.then(fit);
+
+  /* ==========================================================================
+     5. RENDERING
+     ========================================================================== */
+  function renderCats(){
+    $('catSel').innerHTML=CATS.map(([k,n])=>{
+      const count=k==='fav'?FAVS.length:k==='mine'?MINE.length:0;
+      return `<option value="${k}"${k===S.cat?' selected':''}>${esc(n)}${(k==='fav'||k==='mine')?' ('+count+')':''}</option>`;
+    }).join('');
+  }
+  function whenLabel(){ return S.mode==='day'?'Quote of the day':S.mode==='hour'?'Quote of the hour':''; }
+  function render(animate){
+    const stage=$('stage');
+    stage.className='stage bg-'+S.bg+' align-'+S.align+' f-'+S.font;
+    $('app').classList.toggle('bg-glow',S.bg==='glow');
+    const cur=current();
+    const box=$('qbox');
+    const paint=()=>{
+      if(!cur){
+        $('qtext').innerHTML=S.cat==='fav'?'<span class="empty">No favourites yet — tap <b>♥</b> on a quote you love.</span>'
+          :'<span class="empty">No quotes of your own yet — add some in <b>Settings ⚙</b>.</span>';
+        $('qauthor').textContent=''; $('qauthor').hidden=true; box.querySelector('.mark').hidden=true;
+        $('favBtn').disabled=$('copyBtn').disabled=$('prevBtn').disabled=$('nextBtn').disabled=true;
+        $('pos').textContent=''; $('when').textContent='';
+      }else{
+        $('qtext').textContent=cur.q.text;
+        $('qauthor').hidden=!cur.q.author; $('qauthor').textContent=cur.q.author||'';
+        box.querySelector('.mark').hidden=false;
+        const fav=FAVS.includes(cur.q.id);
+        $('favBtn').classList.toggle('on',fav); $('favBtn').setAttribute('aria-pressed',fav); $('favBtn').title=fav?'Remove from favourites':'Add to favourites';
+        $('favBtn').disabled=$('copyBtn').disabled=false;
+        $('prevBtn').disabled=$('nextBtn').disabled=cur.n<2;
+        $('pos').textContent=cur.n>1?(cur.i+1)+' / '+cur.n:'';
+        $('when').textContent=offset===0?whenLabel():'';
+      }
+      fit();
+    };
+    if(animate&&!matchMedia('(prefers-reduced-motion: reduce)').matches){ box.classList.add('swap'); setTimeout(()=>{ paint(); box.classList.remove('swap'); },160); }
+    else paint();
+  }
+
+  /* ==========================================================================
+     6. CONTROLS
+     ========================================================================== */
+  function step(d){ offset+=d; render(true); }
+  $('prevBtn').onclick=()=>step(-1);
+  $('nextBtn').onclick=()=>step(1);
+  $('catSel').onchange=e=>{ S.cat=e.target.value; offset=0; save(); render(true); };
+  $('favBtn').onclick=()=>{
+    const cur=current(); if(!cur) return;
+    const i=FAVS.indexOf(cur.q.id);
+    if(i>=0){ FAVS.splice(i,1); toast('Removed from favourites'); }
+    else{ FAVS.push(cur.q.id); toast('Added to favourites ♥'); }
+    save(); renderCats();
+    // In the Favourites list, un-favouriting moves on to the next one.
+    if(S.cat==='fav'&&i>=0&&offset>0) offset--;
+    render(S.cat==='fav'&&i>=0);
+  };
+  $('copyBtn').onclick=()=>{ const cur=current(); if(cur) copyOrShow('“'+cur.q.text+'”'+(cur.q.author?' — '+cur.q.author:''),'Quote copied'); };
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape') return closePanels();
+    if(document.querySelector('.panel.open')||/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+    if(e.key==='ArrowRight') step(1);
+    if(e.key==='ArrowLeft') step(-1);
+  });
+  // Swipe left / right on touch to change quote.
+  let sx=null;
+  $('stage').addEventListener('touchstart',e=>{ if(e.touches.length===1) sx={x:e.touches[0].clientX,y:e.touches[0].clientY,t:Date.now()}; },{passive:true});
+  $('stage').addEventListener('touchend',e=>{
+    if(!sx) return; const t=e.changedTouches[0], dx=t.clientX-sx.x, dy=t.clientY-sx.y, dt=Date.now()-sx.t; sx=null;
+    if(Math.abs(dx)>=50&&Math.abs(dy)<Math.abs(dx)*.6&&dt<700&&!$('nextBtn').disabled) step(dx<0?1:-1);
+  },{passive:true});
+  // Day / hour rolls over while the page is open: show the new quote.
+  let lastSeed=null;
+  setInterval(()=>{ if(S.mode==='visit') return; const s=seedNow(); if(lastSeed!==null&&s!==lastSeed&&offset===0&&!document.querySelector('.panel.open')) render(true); lastSeed=s; },30000);
+
+  /* ==========================================================================
+     7. COPY (with a fallback when the embed blocks the clipboard)
+     ========================================================================== */
+  async function copyText(text){
+    try{ await navigator.clipboard.writeText(text); return true; }catch(e){}
+    try{ const ta=document.createElement('textarea'); ta.value=text; ta.setAttribute('readonly',''); ta.style.cssText='position:fixed;top:-1000px;opacity:0'; document.body.appendChild(ta); ta.select(); const ok=document.execCommand('copy'); ta.remove(); return ok; }catch(e){ return false; }
+  }
+  async function copyOrShow(text,msg){
+    if(await copyText(text)){ toast(msg); return; }
+    $('cpText').value=text; openPanel('pCopy'); setTimeout(()=>{ $('cpText').focus(); $('cpText').select(); },60);
+  }
+
+  /* ==========================================================================
+     8. YOUR OWN QUOTES
+     ========================================================================== */
+  let editId=null;
+  function openAdd(id){
+    const q=id?MINE.find(x=>x.id===id):null; editId=q?q.id:null;
+    $('addTitle').textContent=q?'Edit quote':'Add a quote';
+    $('aText').value=q?q.text:''; $('aAuthor').value=q?q.author:''; $('aErr').textContent='';
+    openPanel('pAdd');
+  }
+  function saveQuote(){
+    const text=clip($('aText').value,400).replace(/^["“”']+|["“”']+$/g,'').trim(), author=clip($('aAuthor').value,80).replace(/^[—–-]\s*/,'');
+    if(!text){ $('aErr').textContent='Write the quote first.'; return; }
+    if(MINE.length>=500&&!editId){ $('aErr').textContent='You can keep up to 500 of your own quotes.'; return; }
+    let showId=editId;
+    if(editId){ const q=MINE.find(x=>x.id===editId); q.text=text; q.author=author; }
+    else{ showId='c'+uid(); MINE.push({id:showId,text,author,cat:'mine'}); S.cat='mine'; }
+    // Jump straight to the quote just added / edited (the list is shuffled).
+    const cur=current(), at=order().indexOf(showId); if(cur&&at>=0) offset+=at-cur.i;
+    save(); closePanels(); renderCats(); drawMine();
+    render(true); toast(editId?'Quote updated':'Quote added');
+  }
+  $('aSave').onclick=saveQuote;
+  $('aAuthor').addEventListener('keydown',e=>{ if(e.key==='Enter') saveQuote(); });
+  $('addBtn').onclick=()=>openAdd(null);
+  function drawMine(){
+    $('myList').innerHTML=MINE.length?MINE.map(q=>`<div class="ml-it"><span class="tx">${esc(q.text)}${q.author?`<small>— ${esc(q.author)}</small>`:''}</span><button class="ib" data-edit="${q.id}" title="Edit" aria-label="Edit quote"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></button><button class="ib" data-del="${q.id}" title="Delete" aria-label="Delete quote"><svg viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div>`).join('')
+      :'<div class="hint">None yet.</div>';
+  }
+  $('myList').addEventListener('click',e=>{
+    const ed=e.target.closest('[data-edit]'); if(ed) return openAdd(ed.dataset.edit);
+    const b=e.target.closest('[data-del]'); if(!b) return;
+    const i=MINE.findIndex(q=>q.id===b.dataset.del); if(i<0) return;
+    const [q]=MINE.splice(i,1); const fi=FAVS.indexOf(q.id); if(fi>=0) FAVS.splice(fi,1);
+    save(); drawMine(); renderCats(); render();
+    toast('Quote deleted','Undo',()=>{ MINE.splice(i,0,q); if(fi>=0) FAVS.push(q.id); save(); drawMine(); renderCats(); render(); });
+  });
+
+  /* Paste a list: "quote — author" per line, or CSV with a Quote,Author header. */
+  function parseCSVLine(line){
+    const out=[]; let cur='', q=false;
+    for(let i=0;i<line.length;i++){ const ch=line[i];
+      if(q){ if(ch==='"'&&line[i+1]==='"'){ cur+='"'; i++; } else if(ch==='"') q=false; else cur+=ch; }
+      else if(ch==='"') q=true; else if(ch===','){ out.push(cur); cur=''; } else cur+=ch; }
+    out.push(cur); return out;
+  }
+  function parseList(text){
+    const lines=String(text||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+    if(!lines.length) return [];
+    const head=parseCSVLine(lines[0]).map(x=>x.trim().toLowerCase());
+    const qi=head.indexOf('quote'), ai=head.indexOf('author');
+    if(qi>=0) return lines.slice(1).map(l=>{ const c=parseCSVLine(l); return {text:clip(c[qi],400),author:clip(ai>=0?c[ai]:'',80)}; }).filter(x=>x.text);
+    return lines.map(l=>{
+      const m=/^(.*?)\s+[—–-]{1,2}\s+([^—–]{1,80})$/.exec(l);
+      const t=(m?m[1]:l).replace(/^["“”']+|["“”']+$/g,'').trim();
+      return {text:clip(t,400),author:clip(m?m[2]:'',80)};
+    }).filter(x=>x.text);
+  }
+  let parsed=[];
+  $('iText').addEventListener('input',()=>{
+    parsed=parseList($('iText').value);
+    const have=new Set(MINE.map(q=>q.text.toLowerCase()));
+    const fresh=parsed.filter(q=>!have.has(q.text.toLowerCase()));
+    $('iGo').disabled=!fresh.length;
+    $('iMsg').innerHTML=!$('iText').value.trim()?'':!parsed.length?'<div class="err">No quotes found.</div>'
+      :!fresh.length?`<div class="hint">${parsed.length===1?'That quote is':'All '+parsed.length+' are'} already in your list.</div>`
+      :`<div class="ok">✓ ${fresh.length} quote${fresh.length===1?'':'s'} ready${parsed.length-fresh.length?' · '+(parsed.length-fresh.length)+' already in your list':''}</div><div class="hint" style="margin-top:4px">First: “${esc(parsed[0].text.slice(0,80))}${parsed[0].text.length>80?'…':''}”${parsed[0].author?' — '+esc(parsed[0].author):''}</div>`;
+  });
+  $('iGo').onclick=()=>{
+    const have=new Set(MINE.map(q=>q.text.toLowerCase()));
+    const fresh=parsed.filter(q=>!have.has(q.text.toLowerCase())).slice(0,500-MINE.length);
+    fresh.forEach(q=>MINE.push({id:'c'+uid(),text:q.text,author:q.author,cat:'mine'}));
+    save(); closePanels(); S.cat='mine'; offset=0; save(); renderCats(); drawMine(); render(true);
+    toast('Added '+fresh.length+' quote'+(fresh.length===1?'':'s'));
+  };
+  $('importBtn').onclick=()=>{ $('iText').value=''; $('iMsg').innerHTML=''; $('iGo').disabled=true; openPanel('pImport'); };
+
+  /* ==========================================================================
+     9. PANELS & SETTINGS
+     ========================================================================== */
+  let returnFocus=null;
+  function openPanel(id){
+    if(!document.querySelector('.panel.open')) returnFocus=document.activeElement;
+    document.querySelectorAll('.panel.open').forEach(p=>{ if(p.id!==id&&id!=='pCopy') p.classList.remove('open'); });
+    if(id==='pSet') prepSettings();
+    const p=$(id); p.classList.add('open');
+    setTimeout(()=>{ if(p.contains(document.activeElement)) return; const f=p.querySelector('.p-body textarea, .p-body input, .p-body button'); (f||p.querySelector('.p-hd button')).focus({preventScroll:true}); },30);
+  }
+  function closePanels(){
+    const was=!!document.querySelector('.panel.open');
+    document.querySelectorAll('.panel.open').forEach(p=>p.classList.remove('open'));
+    if(was&&returnFocus&&document.contains(returnFocus)&&returnFocus.offsetParent!==null) returnFocus.focus({preventScroll:true});
+    returnFocus=null; resetArmed=false; $('sReset').textContent='Reset settings, favourites & your quotes';
+  }
+  document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',closePanels));
+  $('gearBtn').onclick=()=>openPanel('pSet');
+
+  function tg(id,onPick){
+    const el=$(id);
+    el.addEventListener('click',e=>{ const b=e.target.closest('button'); if(b) onPick(b.dataset.v); });
+    return v=>el.querySelectorAll('button').forEach(b=>{ const on=b.dataset.v===String(v); b.classList.toggle('on',on); b.setAttribute('aria-pressed',on); });
+  }
+  function applyTheme(){
+    document.documentElement.setAttribute('data-theme',effectiveTheme());
+    document.documentElement.style.setProperty('--acc',isHex(S.accent)?S.accent:DEF.accent);
+  }
+  const setMode=tg('sMode',v=>{ S.mode=v; setMode(v); offset=0; visitSeed=Math.random(); save(); render(true); });
+  const setFont=tg('sFont',v=>{ S.font=v; setFont(v); save(); render(); });
+  const setBg=tg('sBg',v=>{ S.bg=v; setBg(v); save(); render(); });
+  const setAlign=tg('sAlign',v=>{ S.align=v; setAlign(v); save(); render(); });
+  const setTheme=tg('sTheme',v=>{ S.theme=v; setTheme(v); save(); applyTheme(); });
+  function drawAccents(){
+    const custom=!ACCENTS.includes(S.accent);
+    $('sAccent').innerHTML=ACCENTS.map(c=>`<button type="button" class="sw${c===S.accent?' on':''}" style="--c:${c}" data-c="${c}" aria-label="Accent ${c}" aria-pressed="${c===S.accent}"></button>`).join('')
+      +`<label class="sw-cu${custom?' on':''}" title="Custom colour"><input type="color" id="sAccIn" value="${isHex(S.accent)?S.accent:DEF.accent}"></label>`;
+    $('sAccIn').addEventListener('input',e=>{ S.accent=e.target.value; save(); applyTheme(); drawAccents(); });
+  }
+  $('sAccent').addEventListener('click',e=>{ const s=e.target.closest('.sw'); if(s){ S.accent=s.dataset.c; save(); applyTheme(); drawAccents(); } });
+  $('sZoom').addEventListener('input',e=>{ S.zoom=+e.target.value; $('sZoomL').textContent=S.zoom+'%'; fit(); });
+  $('sZoom').addEventListener('change',save);
+  function prepSettings(){
+    setMode(S.mode); setFont(S.font); setBg(S.bg); setAlign(S.align); setTheme(S.theme); drawAccents(); drawMine();
+    $('sZoom').value=S.zoom; $('sZoomL').textContent=S.zoom+'%';
+  }
+  _mq.addEventListener('change',()=>{ if(S.theme==='auto') applyTheme(); });
+  let resetArmed=false;
+  $('sReset').onclick=()=>{
+    if(!resetArmed){ resetArmed=true; $('sReset').textContent='Tap again — also deletes your quotes and favourites'; return; }
+    S={...DEF}; FAVS=[]; MINE=[]; offset=0; save(); applyTheme(); closePanels(); renderCats(); render(true); toast('Everything reset');
+  };
+
+  let toastT, toastUndo=null;
+  function toast(msg,undoLabel,undoFn){
+    $('toastMsg').textContent=msg; const b=$('toastBtn');
+    toastUndo=undoFn||null; b.hidden=!undoFn; b.textContent=undoLabel||'';
+    $('toast').classList.add('show'); clearTimeout(toastT);
+    toastT=setTimeout(()=>{ $('toast').classList.remove('show'); toastUndo=null; },undoFn?5000:2200);
+  }
+  $('toastBtn').onclick=()=>{ const f=toastUndo; toastUndo=null; $('toast').classList.remove('show'); if(f) f(); };
+
+  window.addEventListener('storage',e=>{
+    if(e.key!==KEY||e.newValue==null) return;
+    try{ const c=clean(JSON.parse(e.newValue)); S=c.s; MINE=c.mine; FAVS=c.favs; applyTheme(); renderCats(); render(); }catch(err){}
+  });
+
+  /* ==========================================================================
+     10. INIT
+     ========================================================================== */
+  load();
+  try{ localStorage.setItem(KEY+'_probe','1'); localStorage.removeItem(KEY+'_probe'); }catch(e){ storageOK=false; }
+  applyTheme(); renderCats(); render(); lastSeed=seedNow();
+  if(!storageOK) setTimeout(()=>toast('This browser won\'t save favourites or your quotes'),600);
+  </script>
+</body>
+</html>
